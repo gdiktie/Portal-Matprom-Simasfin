@@ -723,12 +723,16 @@ let loginTabMode = "kpno";
 let registerTabMode = "kpno";
 
 // ===== API HELPER =====
+// Menggunakan GET + query param karena browser memblokir POST
+// ke Apps Script akibat redirect CORS. doGet di Apps Script
+// membaca ?data= dan me-route ke handler yang sama.
 async function apiCall(action, payload = {}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action, ...payload }),
-  });
-  return res.json();
+  const body    = JSON.stringify({ action, ...payload });
+  const url     = API_URL + '?data=' + encodeURIComponent(body);
+  const res     = await fetch(url, { method: 'GET', redirect: 'follow' });
+  const text    = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Respons server tidak valid'); }
 }
 
 // ===== INIT =====
