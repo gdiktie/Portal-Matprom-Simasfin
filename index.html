@@ -835,11 +835,22 @@ let registerTabMode = "kpno";
 // Menggunakan GET + query param karena browser memblokir POST
 // ke Apps Script akibat redirect CORS. doGet di Apps Script
 // membaca ?data= dan me-route ke handler yang sama.
+// GET — untuk action ringan tanpa payload besar (login, register, getMedia)
 async function apiCall(action, payload = {}) {
-  const body    = JSON.stringify({ action, ...payload });
-  const url     = API_URL + '?data=' + encodeURIComponent(body);
-  const res     = await fetch(url, { method: 'GET', redirect: 'follow' });
-  const text    = await res.text();
+  const body = JSON.stringify({ action, ...payload });
+  const url  = API_URL + '?data=' + encodeURIComponent(body);
+  const res  = await fetch(url, { method: 'GET', redirect: 'follow' });
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Respons server tidak valid'); }
+}
+
+// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia, toggleLock)
+// Menghindari URL terlalu panjang yang menyebabkan data terpotong di server
+async function apiPost(action, payload = {}) {
+  const body = JSON.stringify({ action, ...payload });
+  const res  = await fetch(API_URL, { method: 'POST', body, redirect: 'follow' });
+  const text = await res.text();
   try { return JSON.parse(text); }
   catch(e) { throw new Error('Respons server tidak valid'); }
 }
@@ -1679,7 +1690,7 @@ async function doUpload() {
       thumb    : hasThumb ? thumbSrc : null,
       driveUrl : null,
     };
-    try { await apiCall('addMedia', { item: newItem }); } catch(e) {}
+    try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
     resetBtn(btn);
     closeModal('upload');
@@ -1791,7 +1802,7 @@ async function doEdit() {
   const btn = document.querySelector('#modal-edit .btn-red-full');
   btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Menyimpan...';
 
-  try { await apiCall('editMedia', { item: updatedItem }); } catch(e) { /* fallback lokal */ }
+  try { await apiPost('editMedia', { item: updatedItem }); } catch(e) { /* fallback lokal */ }
   mediaData[idx] = updatedItem;
 
   btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
@@ -1808,7 +1819,7 @@ async function toggleLock(id) {
   if (idx === -1) return;
   const newLocked = !mediaData[idx].locked;
   const updatedItem = { ...mediaData[idx], locked: newLocked };
-  try { await apiCall('editMedia', { item: updatedItem }); } catch(e) {}
+  try { await apiPost('editMedia', { item: updatedItem }); } catch(e) {}
   mediaData[idx] = updatedItem;
   renderCards();
   showToast('success', newLocked ? '🔒 Materi dikunci' : '🔓 Materi dibuka');
@@ -1819,7 +1830,7 @@ async function deleteCard(id) {
   const item = mediaData.find(d => d.id === id);
   if (item && item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
   if (!confirm('Hapus materi ini?')) return;
-  try { await apiCall('deleteMedia', { id: String(id) }); } catch(e) { /* fallback lokal */ }
+  try { await apiPost('deleteMedia', { id: String(id) }); } catch(e) { /* fallback lokal */ }
   mediaData = mediaData.filter(d => d.id !== id);
   renderCards();
   showToast('success','Materi berhasil dihapus');
