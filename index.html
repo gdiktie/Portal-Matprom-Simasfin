@@ -1294,14 +1294,9 @@ function confirmDownload() {
 }
 
 // ===== UPLOAD =====
-// Strategi: file dikonversi base64 lalu dipotong jadi chunk 200.000 char.
-// Tiap chunk dikirim via POST (body JSON). Apps Script kumpulkan semua
-// chunk di PropertiesService, lalu gabung & simpan ke Drive
-// di folder gdiktie@gmail.com › Portal Matprom › [Kategori] › [Bulan]
-//
-// ⚡ Perbandingan kecepatan:
-//   CHUNK 3.000   → file 514KB = ~234 request × ~1,5 dtk = ±6 menit  ❌
-//   CHUNK 200.000 → file 514KB = ~4   request × ~1,5 dtk = ±6 detik  ✅
+// Strategi: file dikonversi base64 lalu dikirim SEKALIGUS via POST (1 request).
+// ✅ Tidak pakai PropertiesService → tidak ada quota error.
+// ✅ Hanya 1 round-trip ke Apps Script → jauh lebih cepat.
 async function doUpload() {
   const judul = document.getElementById('up-judul').value.trim();
   const kat   = document.getElementById('up-kategori').value;
@@ -1328,53 +1323,36 @@ async function doUpload() {
 
   if (file) {
     try {
-      // Konversi file → base64
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengonversi file...';
       const base64    = await fileToBase64(file);
-      const uploadId  = 'up_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-      // ⚡ 200.000 char/chunk → file 514KB cukup ~4 request saja
-      const CHUNK     = 200000;
-      const total     = Math.ceil(base64.length / CHUNK);
       const subFolder = katLabel[kat] || kat;
 
-      for (let i = 0; i < total; i++) {
-        const chunk = base64.slice(i * CHUNK, (i + 1) * CHUNK);
-        const pct   = Math.round(((i + 1) / total) * 100);
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Upload ' + pct + '% (' + (i+1) + '/' + total + ')...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengupload ke Drive...';
 
-        // Kirim via POST agar tidak ada batasan panjang URL
-        const payload = JSON.stringify({
-          action    : 'uploadChunk',
-          uploadId,
-          chunk,
-          index     : i,
-          total,
-          fileName  : file.name,
-          mimeType  : file.type || 'application/octet-stream',
-          subFolder,
-          bulan,
-          uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO'
-        });
+      // Kirim base64 sekaligus via POST → handleUploadToDrive di Apps Script
+      const payload = JSON.stringify({
+        action    : 'uploadToDrive',
+        base64Data: base64,
+        fileName  : file.name,
+        mimeType  : file.type || 'application/octet-stream',
+        subFolder,
+        bulan,
+        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO'
+      });
 
-        const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
-        const text = await res.text();
-        let r;
-        try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
+      const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
+      const text = await res.text();
+      let r;
+      try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
 
-        if (!r.ok) {
-          showToast('error', 'Gagal chunk ' + i + ': ' + (r.msg || 'error'));
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
-          return;
-        }
-        if (r.done && r.url) driveUrl = r.url;
-      }
-
-      if (!driveUrl) {
-        showToast('error', 'Upload selesai tapi URL Drive tidak diterima');
+      if (!r.ok) {
+        showToast('error', 'Gagal upload: ' + (r.msg || 'error tidak diketahui'));
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
         return;
       }
+      driveUrl = r.url;
+
     } catch(e) {
       showToast('error', 'Gagal upload ke Drive: ' + e.message);
       btn.disabled = false;
