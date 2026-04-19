@@ -139,6 +139,54 @@
   /* FOOTER */
   footer { background: var(--navy); color: rgba(255,255,255,.6); }
 
+  /* LOCK BADGE */
+  .badge-locked { position:absolute; top:10px; left:10px; z-index:3;
+    background:rgba(26,35,64,.75); color:#fff; border-radius:8px;
+    padding:3px 9px; font-size:.65rem; font-weight:700; display:flex;
+    align-items:center; gap:4px; backdrop-filter:blur(4px); }
+  .card-locked .card-thumb { pointer-events:none; filter:brightness(.85); }
+  .card-locked .btn-download { opacity:.4; pointer-events:none; cursor:not-allowed; }
+
+  /* MARKETING BADGE di navbar role */
+  .badge-marketing { background:linear-gradient(135deg,var(--red),var(--orange));
+    color:#fff; border-radius:99px; font-size:.6rem; font-weight:700;
+    padding:2px 8px; letter-spacing:.04em; margin-left:4px; vertical-align:middle; }
+
+  /* PREVIEW PANEL — 2 kolom: kiri gambar, kanan info+deskripsi */
+  .preview-inner { position:relative; max-width:960px; width:100%;
+    display:grid; grid-template-columns:1fr 1fr; gap:24px; align-items:start; }
+  .preview-media-col { position:relative; }
+  .preview-info-col { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+    border-radius:16px; padding:24px; display:flex; flex-direction:column; gap:16px;
+    backdrop-filter:blur(10px); }
+  .preview-info-title { color:#fff; font-size:1.1rem; font-weight:700;
+    font-family:'Sora',sans-serif; line-height:1.3; }
+  .preview-info-meta { display:flex; flex-wrap:wrap; gap:8px; }
+  .preview-meta-chip { background:rgba(255,255,255,.1); color:rgba(255,255,255,.75);
+    border-radius:99px; padding:3px 12px; font-size:.72rem; font-weight:600; }
+  .preview-desc-label { color:rgba(255,255,255,.5); font-size:.72rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em; }
+  .preview-desc-text { color:rgba(255,255,255,.85); font-size:.85rem; line-height:1.65;
+    white-space:pre-wrap; max-height:180px; overflow-y:auto; }
+  .preview-desc-text::-webkit-scrollbar { width:4px; }
+  .preview-desc-text::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:99px; }
+  .btn-copy-desc { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2);
+    color:#fff; border-radius:8px; padding:7px 14px; font-size:.75rem; font-weight:600;
+    cursor:pointer; display:flex; align-items:center; gap:6px; transition:all .2s;
+    width:fit-content; }
+  .btn-copy-desc:hover { background:rgba(255,255,255,.2); }
+  .preview-actions { display:flex; flex-direction:column; gap:8px; margin-top:auto; }
+  .btn-preview-dl { background:linear-gradient(135deg,var(--red),var(--orange));
+    color:#fff; border:none; border-radius:10px; padding:12px 20px; font-weight:700;
+    font-size:.875rem; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; gap:8px; transition:all .2s; }
+  .btn-preview-dl:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(208,40,46,.4); }
+  .btn-preview-dl:disabled { opacity:.4; pointer-events:none; }
+  @media(max-width:680px) {
+    .preview-inner { grid-template-columns:1fr; }
+    .preview-info-col { border-radius:0 0 16px 16px; }
+  }
+
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -559,10 +607,18 @@
           </div>
         </div>
         <div>
+          <label class="input-label">Deskripsi Materi</label>
+          <textarea id="up-deskripsi" rows="3" placeholder="Tuliskan keterangan, cara penggunaan, atau info penting materi ini..." class="input-field" style="resize:vertical;min-height:72px;"></textarea>
+        </div>
+        <div>
           <label class="input-label">Tandai sebagai</label>
           <label class="flex items-center gap-2 cursor-pointer mt-1">
             <input type="checkbox" id="up-isnew" class="w-4 h-4 accent-red-600">
             <span class="text-sm text-gray-600">Materi Baru (tampilkan badge NEW)</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer mt-2">
+            <input type="checkbox" id="up-locked" class="w-4 h-4 accent-red-600">
+            <span class="text-sm text-gray-600"><i class="fa-solid fa-lock text-red-400 mr-1"></i>Kunci materi (tidak bisa diunduh/dihapus)</span>
           </label>
         </div>
         <div>
@@ -633,10 +689,16 @@
           </div>
         </div>
         <div>
-          <label class="input-label">Tandai sebagai</label>
+          <label class="input-label">Deskripsi Materi</label>
+          <textarea id="edit-deskripsi" rows="3" placeholder="Deskripsi materi..." class="input-field" style="resize:vertical;min-height:72px;"></textarea>
+          <label class="input-label" style="margin-top:12px;">Tandai sebagai</label>
           <label class="flex items-center gap-2 cursor-pointer mt-1">
             <input type="checkbox" id="edit-isnew" class="w-4 h-4 accent-red-600">
             <span class="text-sm text-gray-600">Materi Baru (tampilkan badge NEW)</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer mt-2">
+            <input type="checkbox" id="edit-locked" class="w-4 h-4 accent-red-600">
+            <span class="text-sm text-gray-600"><i class="fa-solid fa-lock text-red-400 mr-1"></i>Kunci materi</span>
           </label>
         </div>
         <div>
@@ -696,13 +758,34 @@
 <!-- ===== IMAGE PREVIEW OVERLAY ===== -->
 <div class="preview-overlay" id="preview-overlay" onclick="closePreview(event)">
   <div class="preview-inner">
-    <button class="preview-close" onclick="closePreviewBtn()"><i class="fa-solid fa-xmark"></i></button>
-    <div id="preview-content"></div>
-    <div class="preview-caption" id="preview-caption"></div>
-    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
-      <button id="preview-dl-btn" onclick="triggerPreviewDownload()" style="background:linear-gradient(135deg,var(--red),var(--orange));color:#fff;border:none;border-radius:10px;padding:11px 28px;font-weight:700;font-size:.875rem;cursor:pointer;display:flex;align-items:center;gap:8px;">
-        <i class="fa-solid fa-download"></i> Unduh Materi
-      </button>
+    <!-- Kolom kiri: gambar/thumbnail -->
+    <div class="preview-media-col">
+      <button class="preview-close" onclick="closePreviewBtn()"><i class="fa-solid fa-xmark"></i></button>
+      <div id="preview-content"></div>
+      <div class="preview-caption" id="preview-caption"></div>
+    </div>
+    <!-- Kolom kanan: info + deskripsi + tombol -->
+    <div class="preview-info-col">
+      <div class="preview-info-title" id="preview-info-title">–</div>
+      <div class="preview-info-meta" id="preview-info-meta"></div>
+      <div id="preview-desc-wrap" style="display:none;">
+        <div class="preview-desc-label" style="margin-bottom:6px;"><i class="fa-solid fa-align-left mr-1"></i>Deskripsi</div>
+        <div class="preview-desc-text" id="preview-desc-text"></div>
+        <button class="btn-copy-desc" id="btn-copy-desc" style="margin-top:8px;" onclick="copyDesc()">
+          <i class="fa-solid fa-copy"></i> Salin Deskripsi
+        </button>
+      </div>
+      <div id="preview-nodesc" style="color:rgba(255,255,255,.35);font-size:.8rem;font-style:italic;display:none;">
+        Tidak ada deskripsi untuk materi ini.
+      </div>
+      <div class="preview-actions">
+        <button id="preview-dl-btn" class="btn-preview-dl" onclick="triggerPreviewDownload()">
+          <i class="fa-solid fa-download"></i> Unduh Materi
+        </button>
+        <div id="preview-locked-msg" style="display:none;text-align:center;color:rgba(255,200,100,.9);font-size:.78rem;font-weight:600;">
+          <i class="fa-solid fa-lock mr-1"></i>Materi ini dikunci oleh Marketing. Hubungi admin untuk akses.
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -996,24 +1079,73 @@ function openPreview(id) {
   const item = mediaData.find(d => d.id === id);
   if (!item) return;
   previewCurrentId = id;
-  const content = document.getElementById('preview-content');
-  const caption = document.getElementById('preview-caption');
-  caption.textContent = item.title + ' · ' + item.month + ' · ' + item.size;
+  const mkt    = isMarketing();
+  const locked = !!item.locked;
+
+  // ── Media col ───────────────────────────────────────────────
+  const contentEl = document.getElementById('preview-content');
+  const captionEl = document.getElementById('preview-caption');
+  captionEl.textContent = item.month + ' · ' + item.size;
 
   if (item.thumb) {
-    content.innerHTML = `<img src="${item.thumb}" alt="${item.title}" style="width:100%;border-radius:14px;max-height:72vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);">`;
+    contentEl.innerHTML = `<img src="${item.thumb}" alt="${item.title}" style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);">`;
   } else {
     const catColors = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
-    const catBg = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
-    content.innerHTML = `
+    const catBg     = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
+    contentEl.innerHTML = `
       <div class="preview-placeholder" style="background:${catBg[item.cat]||'#f5f5f5'}">
         <i class="fa-solid ${item.icon}" style="color:${catColors[item.cat]||'#888'};font-size:5rem;opacity:.7"></i>
         <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
-        <span style="color:#999;font-size:.78rem;">Upload gambar preview untuk menampilkan thumbnail</span>
       </div>`;
   }
+
+  // ── Info col ────────────────────────────────────────────────
+  document.getElementById('preview-info-title').textContent = item.title;
+
+  const catLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',
+    formulir:'Formulir',video:'Video',logo:'Logo'}[item.cat] || item.cat;
+  document.getElementById('preview-info-meta').innerHTML =
+    `<span class="preview-meta-chip"><i class="fa-solid fa-tag mr-1" style="font-size:.6rem;"></i>${catLabel}</span>` +
+    `<span class="preview-meta-chip"><i class="fa-solid fa-calendar mr-1" style="font-size:.6rem;"></i>${item.month}</span>` +
+    `<span class="preview-meta-chip"><i class="fa-solid fa-file mr-1" style="font-size:.6rem;"></i>${item.size}</span>` +
+    (locked ? `<span class="preview-meta-chip" style="background:rgba(251,191,36,.15);color:#fbbf24;"><i class="fa-solid fa-lock mr-1" style="font-size:.6rem;"></i>Terkunci</span>` : '');
+
+  // Deskripsi
+  const descWrap  = document.getElementById('preview-desc-wrap');
+  const noDescEl  = document.getElementById('preview-nodesc');
+  const descText  = document.getElementById('preview-desc-text');
+  if (item.deskripsi && item.deskripsi.trim()) {
+    descText.textContent = item.deskripsi;
+    descWrap.style.display = '';
+    noDescEl.style.display = 'none';
+  } else {
+    descWrap.style.display = 'none';
+    noDescEl.style.display = '';
+  }
+
+  // Tombol download di panel kanan
+  const dlBtn  = document.getElementById('preview-dl-btn');
+  const lockMsg = document.getElementById('preview-locked-msg');
+  if (locked && !mkt) {
+    dlBtn.disabled = true;
+    lockMsg.style.display = '';
+  } else {
+    dlBtn.disabled = false;
+    lockMsg.style.display = 'none';
+  }
+
   document.getElementById('preview-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+}
+
+function copyDesc() {
+  const item = mediaData.find(d => d.id === previewCurrentId);
+  if (!item || !item.deskripsi) return;
+  navigator.clipboard.writeText(item.deskripsi).then(() => {
+    const btn = document.getElementById('btn-copy-desc');
+    btn.innerHTML = '<i class="fa-solid fa-check"></i> Tersalin!';
+    setTimeout(() => { btn.innerHTML = '<i class="fa-solid fa-copy"></i> Salin Deskripsi'; }, 2000);
+  }).catch(() => showToast('error', 'Gagal menyalin teks'));
 }
 function closePreview(e) {
   if (e.target === document.getElementById('preview-overlay')) closePreviewBtn();
@@ -1169,6 +1301,14 @@ function logout() {
   showToast('success', 'Berhasil logout');
 }
 
+// Helper: cek apakah user adalah Marketing (superadmin)
+function isMarketing() {
+  return currentUser &&
+    currentUser.role === 'kpno' &&
+    currentUser.cabang &&
+    currentUser.cabang.toLowerCase().includes('marketing');
+}
+
 function onLoginSuccess() {
   document.getElementById('gate-section').classList.add('hidden');
   document.getElementById('content-section').classList.remove('hidden');
@@ -1176,9 +1316,15 @@ function onLoginSuccess() {
   document.getElementById('user-info').classList.remove('hidden');
   document.getElementById('user-info').classList.add('flex');
   document.getElementById('nav-username').textContent = currentUser.nama.split(' ').slice(0,2).join(' ');
-  document.getElementById('nav-role').textContent = currentUser.role === 'kpno' ? 'KPNO' : 'Cabang · ' + currentUser.cabang;
 
-  if (currentUser.role === 'kpno') {
+  // Tampilkan badge MARKETING jika superadmin
+  const roleLabel = currentUser.role === 'kpno'
+    ? 'KPNO' + (isMarketing() ? ' <span class="badge-marketing">✦ MARKETING</span>' : '')
+    : 'Cabang · ' + currentUser.cabang;
+  document.getElementById('nav-role').innerHTML = roleLabel;
+
+  // Hanya Marketing yang dapat toolbar upload
+  if (isMarketing()) {
     document.getElementById('kpno-toolbar').classList.remove('hidden');
     document.getElementById('kpno-toolbar').classList.add('flex');
   } else {
@@ -1278,6 +1424,8 @@ function filterCat(cat, btn) {
 // ===== DOWNLOAD =====
 function openDownload(id, title) {
   if (!currentUser) { showToast('error','Silakan login terlebih dahulu'); return; }
+  const chk = mediaData.find(d => d.id === id);
+  if (chk && chk.locked && !isMarketing()) { showToast('error','Materi ini dikunci. Hubungi tim Marketing.'); return; }
   selectedDownloadId = id;
   document.getElementById('dl-title').textContent = title;
   openModal('dl');
@@ -1352,6 +1500,7 @@ async function doUpload() {
     try {
       // ── Langkah 1: Konversi file ke base64 ──────────────────
       setProgress(btn, 10, 'Mengonversi file...');
+      const deskripsi = document.getElementById('up-deskripsi').value.trim();
       const base64    = await fileToBase64(file);
       const subFolder = katLabel[kat] || kat;
       const fileSize  = file.size > 1048576
@@ -1372,6 +1521,8 @@ async function doUpload() {
         size     : fileSize,
         thumb    : hasThumb ? thumbSrc : null,
         driveUrl : null,  // diisi setelah response
+        deskripsi: deskripsi || '',
+        locked   : isLocked,
       };
 
       // ── Langkah 2: Upload file + simpan media dalam 1 request ─
@@ -1425,6 +1576,8 @@ async function doUpload() {
         document.getElementById('up-kategori').value = '';
         document.getElementById('up-bulan').value    = '';
         document.getElementById('up-isnew').checked  = false;
+        document.getElementById('up-locked').checked  = false;
+        document.getElementById('up-deskripsi').value  = '';
         document.getElementById('up-file-name').classList.add('hidden');
         removeUploadPreview();
         document.getElementById('up-img-preview').style.display = 'none';
@@ -1504,6 +1657,8 @@ function openEdit(id) {
   document.getElementById('edit-kategori').value = item.cat;
   document.getElementById('edit-bulan').value = item.month;
   document.getElementById('edit-isnew').checked = !!item.isNew;
+  document.getElementById('edit-deskripsi').value = item.deskripsi || '';
+  document.getElementById('edit-locked').checked = !!item.locked;
   document.getElementById('edit-file-name').classList.add('hidden');
   document.getElementById('edit-file').value = '';
 
@@ -1524,7 +1679,9 @@ async function doEdit() {
   const judul = document.getElementById('edit-judul').value.trim();
   const kat = document.getElementById('edit-kategori').value;
   const bulan = document.getElementById('edit-bulan').value;
-  const isNew = document.getElementById('edit-isnew').checked;
+  const isNew   = document.getElementById('edit-isnew').checked;
+  const isLocked= document.getElementById('edit-locked').checked;
+  const deskripsi = document.getElementById('edit-deskripsi').value.trim();
 
   if (!judul || !kat || !bulan) { showToast('error','Harap lengkapi semua field'); return; }
 
@@ -1550,6 +1707,8 @@ async function doEdit() {
     color: colorMap[kat] || '#f5f5f5', iconColor: icMap[kat] || '#888',
     size: newFile ? (newFile.size > 1048576 ? (newFile.size/1048576).toFixed(1)+' MB' : Math.round(newFile.size/1024)+' KB') : oldSize,
     thumb: hasNewThumb ? editThumbSrc : (previewVisible ? oldThumb : null),
+    deskripsi: deskripsi,
+    locked: isLocked,
   };
 
   const btn = document.querySelector('#modal-edit .btn-red-full');
@@ -1566,7 +1725,22 @@ async function doEdit() {
   showToast('success','Materi berhasil diperbarui!');
 }
 
+async function toggleLock(id) {
+  if (!isMarketing()) { showToast('error','Hanya Marketing yang dapat mengunci materi'); return; }
+  const idx = mediaData.findIndex(d => d.id === id);
+  if (idx === -1) return;
+  const newLocked = !mediaData[idx].locked;
+  const updatedItem = { ...mediaData[idx], locked: newLocked };
+  try { await apiCall('editMedia', { item: updatedItem }); } catch(e) {}
+  mediaData[idx] = updatedItem;
+  renderCards();
+  showToast('success', newLocked ? '🔒 Materi dikunci' : '🔓 Materi dibuka');
+}
+
 async function deleteCard(id) {
+  if (!isMarketing()) { showToast('error','Hanya Marketing yang dapat menghapus materi'); return; }
+  const item = mediaData.find(d => d.id === id);
+  if (item && item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
   if (!confirm('Hapus materi ini?')) return;
   try { await apiCall('deleteMedia', { id: String(id) }); } catch(e) { /* fallback lokal */ }
   mediaData = mediaData.filter(d => d.id !== id);
