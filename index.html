@@ -1271,24 +1271,34 @@ function confirmDownload() {
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
 
-  // Download langsung dari Google Drive jika tersedia
   if (item.driveUrl) {
-    // Konversi Google Drive view URL ke download URL
-    const dlUrl = item.driveUrl.replace('/view', '/uc?export=download').replace('?usp=sharing','');
-    const a = document.createElement('a');
-    a.href = dlUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.click();
-    showToast('success','Materi sedang diunduh dari Google Drive...');
+    // Ekstrak fileId dari view URL lalu bangun URL download yang benar
+    // Format view:  https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+    // Format download yang benar: https://drive.google.com/uc?export=download&confirm=t&id=FILE_ID
+    const match = item.driveUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      const fileId = match[1];
+      const dlUrl  = 'https://drive.google.com/uc?export=download&confirm=t&id=' + fileId;
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.download = item.title || 'matprom';
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('success', 'Materi sedang diunduh dari Google Drive...');
+    } else {
+      showToast('error', 'URL Drive tidak valid, hubungi admin.');
+    }
   } else {
-    showToast('success','Materi sedang diunduh...');
+    showToast('error', 'File belum tersedia untuk diunduh.');
   }
 
   if (currentUser && selectedDownloadId) {
     apiCall('logDownload', {
-      userId: currentUser.idcard4,
-      itemId: String(selectedDownloadId),
+      userId   : currentUser.idcard4,
+      itemId   : String(selectedDownloadId),
       itemTitle: item ? item.title : ''
     }).catch(() => {});
   }
