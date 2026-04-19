@@ -745,6 +745,22 @@ async function apiCall(action, payload = {}) {
   catch(e) { throw new Error('Respons server tidak valid'); }
 }
 
+// ===== API HELPER UNTUK POST (upload file besar ke Drive) =====
+// GET punya batas URL ~8000 char, base64 file langsung meledak.
+// Apps Script doPost membaca e.postData.contents → route() → handler.
+async function apiCallPost(action, payload = {}) {
+  const body = JSON.stringify({ action, ...payload });
+  const res  = await fetch(API_URL, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: body
+  });
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { throw new Error('Respons server tidak valid'); }
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', async () => {
   buildMonthTabs();
@@ -1315,15 +1331,17 @@ async function doUpload() {
   let driveUrl = null;
 
   // Upload file ke Google Drive jika ada file yang dipilih
+  // Wajib pakai POST karena base64 terlalu besar untuk URL GET
   if (file) {
     try {
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Upload ke Drive...';
       const base64 = await fileToBase64(file);
-      const driveResp = await apiCall('uploadToDrive', {
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        base64Data: base64,
-        folder: bulan + ' - ' + kat
+      const driveResp = await apiCallPost('uploadToDrive', {
+        fileName   : file.name,
+        mimeType   : file.type || 'application/octet-stream',
+        base64Data : base64,
+        folder     : bulan + ' - ' + kat,
+        uploadedBy : currentUser ? currentUser.idcard4 : 'KPNO'
       });
       if (driveResp.ok && driveResp.url) {
         driveUrl = driveResp.url;
@@ -1334,7 +1352,7 @@ async function doUpload() {
         return;
       }
     } catch(e) {
-      showToast('error', 'Gagal upload file ke Drive');
+      showToast('error', 'Gagal upload ke Drive: ' + e.message);
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
       return;
