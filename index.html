@@ -222,7 +222,7 @@
     </div>
     <div class="grid grid-cols-3 gap-4 max-w-2xl mx-auto">
       <div class="stat-card text-center">
-        <div class="text-2xl font-sora font-bold text-white">0</div>
+        <div class="text-2xl font-sora font-bold text-white" id="hero-stat-materi">0</div>
         <div class="text-gray-400 text-xs mt-1">Materi Tersedia</div>
       </div>
       <div class="stat-card text-center">
@@ -337,7 +337,7 @@
         <div class="text-gray-400 text-xs mt-1">+62 822-1369-4314</div>
         <div class="text-green-600 text-xs font-semibold mt-2"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Chat Sekarang</div>
       </a>
-      <a href="mailto:mbc@simasfinance.co.id" target="_blank" rel="noopener noreferrer" class="border border-gray-100 rounded-2xl p-5 text-center block hover:shadow-lg hover:border-blue-200 transition-all" style="text-decoration:none;color:inherit;">
+      <a href="mailto:mbc@simasfinance.co.id" class="border border-gray-100 rounded-2xl p-5 text-center block hover:shadow-lg hover:border-blue-200 transition-all" style="text-decoration:none;color:inherit;">
         <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-3">
           <i class="fa-solid fa-envelope text-blue-600"></i>
         </div>
@@ -461,8 +461,18 @@
         <div>
           <label class="input-label" id="reg-unit-label">Unit/Divisi KPNO <span class="text-red-500">*</span></label>
           <div id="reg-unit-wrapper">
-            <!-- KPNO: text input, Cabang: dropdown -->
-            <input type="text" id="reg-unit-input" placeholder="Contoh: Marketing Division" class="input-field">
+            <!-- KPNO: dropdown divisi, Cabang: dropdown cabang -->
+            <select id="reg-unit-input" class="input-field">
+              <option value="">-- Pilih Unit/Divisi --</option>
+              <option value="Audit">Audit</option>
+              <option value="Collection">Collection</option>
+              <option value="Corsec">Corsec</option>
+              <option value="Finance">Finance</option>
+              <option value="General Supply &amp; Procurement">General Supply &amp; Procurement</option>
+              <option value="Human Capital">Human Capital</option>
+              <option value="Legal">Legal</option>
+              <option value="Marketing">Marketing</option>
+            </select>
             <select id="reg-cabang-select" class="input-field hidden"><option value="">-- Pilih Cabang --</option><option value="Ambon">Ambon</option><option value="Balikpapan">Balikpapan</option><option value="Bandar Lampung">Bandar Lampung</option><option value="Bandung">Bandung</option><option value="Banjarmasin">Banjarmasin</option><option value="Batam">Batam</option><option value="Bekasi">Bekasi</option><option value="Bengkulu">Bengkulu</option><option value="Bogor">Bogor</option><option value="Cimahi">Cimahi</option><option value="Cirebon">Cirebon</option><option value="Denpasar">Denpasar</option><option value="Depok">Depok</option><option value="Gorontalo">Gorontalo</option><option value="Jakarta Barat">Jakarta Barat</option><option value="Jakarta Pusat">Jakarta Pusat</option><option value="Jakarta Selatan">Jakarta Selatan</option><option value="Jakarta Timur">Jakarta Timur</option><option value="Jakarta Utara">Jakarta Utara</option><option value="Jambi">Jambi</option><option value="Jayapura">Jayapura</option><option value="Jember">Jember</option><option value="Kediri">Kediri</option><option value="Kendari">Kendari</option><option value="Kupang">Kupang</option><option value="Madiun">Madiun</option><option value="Makassar">Makassar</option><option value="Malang">Malang</option><option value="Manado">Manado</option><option value="Manokwari">Manokwari</option><option value="Mataram">Mataram</option><option value="Medan">Medan</option><option value="Padang">Padang</option><option value="Palembang">Palembang</option><option value="Palu">Palu</option><option value="Pekanbaru">Pekanbaru</option><option value="Pontianak">Pontianak</option><option value="Samarinda">Samarinda</option><option value="Semarang">Semarang</option><option value="Sidoarjo">Sidoarjo</option><option value="Solo">Solo</option><option value="Sorong">Sorong</option><option value="Sukabumi">Sukabumi</option><option value="Surabaya">Surabaya</option><option value="Tangerang">Tangerang</option><option value="Tangerang Selatan">Tangerang Selatan</option><option value="Ternate">Ternate</option><option value="Yogyakarta">Yogyakarta</option></select>
           </div>
         </div>
@@ -1092,7 +1102,7 @@ async function doRegister() {
   const pwd = document.getElementById('reg-password').value;
   const confirm = document.getElementById('reg-confirm').value;
   const unit = registerTabMode === 'kpno'
-    ? document.getElementById('reg-unit-input').value.trim()
+    ? document.getElementById('reg-unit-input').value
     : document.getElementById('reg-cabang-select').value;
 
   if (!nama || !nik || !idcard || !email || !telp || !pwd || !unit) {
@@ -1158,8 +1168,15 @@ function onLoginSuccess() {
   renderCards();
 }
 
+// ===== HERO STAT =====
+function updateHeroStat() {
+  const el = document.getElementById('hero-stat-materi');
+  if (el) el.textContent = mediaData.length;
+}
+
 // ===== CARDS =====
 function renderCards() {
+  updateHeroStat();
   const filtered = mediaData.filter(d => d.month === activeMonth);
   const q = (document.getElementById('search-input').value || '').toLowerCase();
 
@@ -1248,9 +1265,24 @@ function openDownload(id, title) {
 }
 function confirmDownload() {
   closeModal('dl');
-  showToast('success','Materi sedang diunduh...');
+  const item = mediaData.find(d => d.id === selectedDownloadId);
+  if (!item) return;
+
+  // Download langsung dari Google Drive jika tersedia
+  if (item.driveUrl) {
+    // Konversi Google Drive view URL ke download URL
+    const dlUrl = item.driveUrl.replace('/view', '/uc?export=download').replace('?usp=sharing','');
+    const a = document.createElement('a');
+    a.href = dlUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+    showToast('success','Materi sedang diunduh dari Google Drive...');
+  } else {
+    showToast('success','Materi sedang diunduh...');
+  }
+
   if (currentUser && selectedDownloadId) {
-    const item = mediaData.find(d => d.id === selectedDownloadId);
     apiCall('logDownload', {
       userId: currentUser.idcard4,
       itemId: String(selectedDownloadId),
@@ -1277,16 +1309,48 @@ async function doUpload() {
   const thumbSrc = previewImgEl.src || null;
   const hasThumb = thumbSrc && thumbSrc.startsWith('data:image');
 
+  const btn = document.querySelector('#modal-upload .btn-red-full');
+  btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengupload...';
+
+  let driveUrl = null;
+
+  // Upload file ke Google Drive jika ada file yang dipilih
+  if (file) {
+    try {
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Upload ke Drive...';
+      const base64 = await fileToBase64(file);
+      const driveResp = await apiCall('uploadToDrive', {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        base64Data: base64,
+        folder: bulan + ' - ' + kat
+      });
+      if (driveResp.ok && driveResp.url) {
+        driveUrl = driveResp.url;
+      } else {
+        showToast('error', 'Gagal upload ke Drive: ' + (driveResp.msg || 'Unknown error'));
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
+        return;
+      }
+    } catch(e) {
+      showToast('error', 'Gagal upload file ke Drive');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
+      return;
+    }
+  }
+
   const newItem = {
     id: Date.now(), title: judul, cat: kat, segment: segMap[kat] || 'cetak',
     month: bulan, isNew, icon: iconMap[kat] || 'fa-file',
     color: colorMap[kat] || '#f5f5f5', iconColor: icMap[kat] || '#888',
     size: file ? (file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB') : '–',
     thumb: hasThumb ? thumbSrc : null,
+    driveUrl: driveUrl,
   };
 
-  const btn = document.querySelector('#modal-upload .btn-red-full');
-  btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengupload...';
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Menyimpan...';
 
   try { await apiCall('addMedia', { item: newItem }); } catch(e) { /* fallback lokal */ }
   mediaData.unshift(newItem);
@@ -1296,7 +1360,7 @@ async function doUpload() {
   activeMonth = bulan;
   document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
   renderCards();
-  showToast('success','Materi berhasil diupload!');
+  showToast('success','Materi berhasil diupload ke Drive!');
   document.getElementById('up-judul').value = '';
   document.getElementById('up-kategori').value = '';
   document.getElementById('up-bulan').value = '';
@@ -1304,6 +1368,21 @@ async function doUpload() {
   document.getElementById('up-file-name').classList.add('hidden');
   removeUploadPreview();
   document.getElementById('up-img-preview').style.display = 'none';
+}
+
+// Helper: konversi File ke base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Ambil hanya bagian data (tanpa prefix "data:...;base64,")
+      const result = reader.result;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ===== EDIT =====
