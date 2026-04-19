@@ -333,6 +333,13 @@
         <div class="relative">
           <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
           <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9 w-64" oninput="filterCards()">
+          </div>
+          <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
+            style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;"
+            onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
         </div>
       </div>
       <div class="flex flex-wrap gap-2 mb-4" id="month-tabs"><button class="month-tab">Januari</button><button class="month-tab">Februari</button><button class="month-tab">Maret</button><button class="month-tab active">April</button><button class="month-tab">Mei</button><button class="month-tab">Juni</button><button class="month-tab">Juli</button><button class="month-tab">Agustus</button><button class="month-tab">September</button><button class="month-tab">Oktober</button><button class="month-tab">November</button><button class="month-tab">Desember</button></div>
@@ -862,7 +869,11 @@ async function loadMediaCount() {
   try {
     const resp = await apiCall('getMedia');
     if (resp.ok && Array.isArray(resp.data)) {
-      mediaData = resp.data;
+      mediaData = resp.data.map(item => ({
+        ...item,
+        locked   : item.locked    === true,
+        deskripsi: item.deskripsi || '',
+      }));
       updateHeroStat();
     }
   } catch(e) {
@@ -876,7 +887,13 @@ async function loadMediaFromSheets() {
     showLoadingOverlay(true);
     const resp = await apiCall('getMedia');
     if (resp.ok && resp.data.length > 0) {
-      mediaData = resp.data;
+      // ✅ Normalisasi: pastikan setiap item punya field locked & deskripsi
+      // supaya data lama (sebelum fitur ini ada) tidak lolos guard
+      mediaData = resp.data.map(item => ({
+        ...item,
+        locked   : item.locked    === true,   // pastikan boolean, bukan undefined
+        deskripsi: item.deskripsi || '',       // pastikan string, bukan undefined
+      }));
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
@@ -1447,6 +1464,24 @@ function buildCard(item) {
 }
 
 function filterCards() { renderCards(); }
+
+// Ambil data terbaru dari server (locked, deskripsi, dll) lalu render ulang
+async function doRefreshMedia() {
+  const btn = document.querySelector('[onclick="doRefreshMedia()"]');
+  if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true; }
+  try {
+    const resp = await apiCall('getMedia');
+    if (resp.ok && Array.isArray(resp.data)) {
+      mediaData = resp.data;
+      renderCards();
+      showToast('success', 'Materi berhasil diperbarui');
+    }
+  } catch(e) { showToast('error', 'Gagal memuat ulang'); }
+  finally {
+    if (btn) { btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i>'; btn.disabled = false; }
+  }
+}
+
 function filterCat(cat, btn) {
   activeCat = cat;
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
@@ -1467,6 +1502,12 @@ function confirmDownload() {
   closeModal('dl');
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
+
+  // ✅ Guard berlapis: cegah download jika locked & bukan marketing
+  if (item.locked === true && !isMarketing()) {
+    showToast('error', 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.');
+    return;
+  }
 
   if (item.driveUrl) {
     // Ekstrak fileId dari view URL lalu bangun URL download yang benar
@@ -1529,11 +1570,13 @@ async function doUpload() {
 
   let driveUrl = null;
 
+  const deskripsi = document.getElementById('up-deskripsi') ? document.getElementById('up-deskripsi').value.trim() : '';
+  const isLocked  = !!(document.getElementById('up-locked') && document.getElementById('up-locked').checked);
+
   if (file) {
     try {
       // ── Langkah 1: Konversi file ke base64 ──────────────────
       setProgress(btn, 10, 'Mengonversi file...');
-      const deskripsi = document.getElementById('up-deskripsi').value.trim();
       const base64    = await fileToBase64(file);
       const subFolder = katLabel[kat] || kat;
       const fileSize  = file.size > 1048576
