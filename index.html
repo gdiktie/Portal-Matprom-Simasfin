@@ -144,8 +144,16 @@
     background:rgba(26,35,64,.75); color:#fff; border-radius:8px;
     padding:3px 9px; font-size:.65rem; font-weight:700; display:flex;
     align-items:center; gap:4px; backdrop-filter:blur(4px); }
-  .card-locked .card-thumb { pointer-events:none; filter:brightness(.85); }
-  .card-locked .btn-download { opacity:.4; pointer-events:none; cursor:not-allowed; }
+  /* Card terkunci: seluruh card abu-abu, tidak bisa diklik */
+  .card-locked { opacity:.72; filter:grayscale(.7); position:relative; }
+  .card-locked::after {
+    content:''; position:absolute; inset:0; border-radius:16px;
+    background:rgba(107,114,128,.08); pointer-events:none; z-index:1; }
+  .card-locked .card-thumb { pointer-events:none; }
+  .card-locked .btn-download-locked {
+    background:#e5e7eb; color:#9ca3af; cursor:not-allowed;
+    border-radius:8px; padding:8px 16px; font-size:.8rem; font-weight:600;
+    border:none; display:flex; align-items:center; gap:6px; flex:1; }
 
   /* MARKETING BADGE di navbar role */
   .badge-marketing { background:linear-gradient(135deg,var(--red),var(--orange));
@@ -1373,7 +1381,10 @@ function renderGrid(gridId, emptyId, items) {
 }
 
 function buildCard(item) {
-  const isKPNO = currentUser && currentUser.role === 'kpno';
+  const mkt    = isMarketing();
+  const locked = !!item.locked;
+  const canDl  = !locked || mkt;
+
   const catLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',formulir:'Formulir',video:'Video',logo:'Logo'}[item.cat] || item.cat;
   const catColor = {brosur:'bg-orange-100 text-orange-700',banner:'bg-blue-100 text-blue-700',instagram:'bg-pink-100 text-pink-700',formulir:'bg-green-100 text-green-700',video:'bg-purple-100 text-purple-700',logo:'bg-yellow-100 text-yellow-700'}[item.cat] || 'bg-gray-100 text-gray-600';
 
@@ -1385,29 +1396,51 @@ function buildCard(item) {
        </div>
        <div class="thumb-overlay"><i class="fa-solid fa-eye thumb-overlay-icon"></i></div>`;
 
+  const dlBtn = canDl
+    ? `<button class="btn-download flex-1" onclick="openDownload(${item.id},'${item.title.replace(/'/g,"\'")}')">
+         <i class="fa-solid fa-download"></i> Unduh
+       </button>`
+    : `<button class="btn-download-locked flex-1" disabled title="Materi dikunci oleh Marketing">
+         <i class="fa-solid fa-lock"></i> Terkunci
+       </button>`;
+
+  const mktBtns = mkt ? `
+    <button class="btn-edit" onclick="toggleLock(${item.id})"
+      title="${locked ? 'Buka Kunci' : 'Kunci Materi'}"
+      style="${locked ? 'background:#fef9c3;color:#92400e;border-color:#fbbf24;' : ''}">
+      <i class="fa-solid fa-${locked ? 'lock-open' : 'lock'}"></i>
+    </button>
+    <button class="btn-edit" onclick="openEdit(${item.id})" title="Edit Materi">
+      <i class="fa-solid fa-pen-to-square"></i>
+    </button>
+    <button class="btn-delete" onclick="deleteCard(${item.id})" title="Hapus Materi">
+      <i class="fa-solid fa-trash"></i>
+    </button>` : '';
+
+  const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
+  const clickable = (!locked || mkt);
+
   return `
-  <div class="media-card" id="card-${item.id}">
-    <div class="card-thumb" onclick="openPreview(${item.id})">
+  <div class="${cardClass}" id="card-${item.id}">
+    <div class="card-thumb" onclick="${clickable ? `openPreview(${item.id})` : ''}"
+         style="${!clickable ? 'cursor:default;pointer-events:none;' : ''}">
       ${thumbHtml}
-      ${item.isNew ? '<span class="badge-new">✦ NEW</span>' : ''}
+      ${item.isNew && !locked ? '<span class="badge-new">✦ NEW</span>' : ''}
+      ${locked ? '<span class="badge-locked"><i class="fa-solid fa-lock" style="font-size:.6rem;"></i> TERKUNCI</span>' : ''}
     </div>
     <div class="p-4">
       <div class="mb-2 flex items-center justify-between">
         <span class="badge-type ${catColor}">${catLabel}</span>
         <span class="text-xs text-gray-400">${item.month}</span>
       </div>
-      <h3 class="font-semibold text-sm text-navy leading-snug mb-1 line-clamp-2">${item.title}</h3>
+      <h3 class="font-semibold text-sm ${(locked && !mkt) ? 'text-gray-400' : 'text-navy'} leading-snug mb-1 line-clamp-2">${item.title}</h3>
       <div class="text-xs text-gray-400 mb-4 flex items-center gap-2">
         <i class="fa-solid fa-file text-gray-300"></i>${item.size}
+        ${locked ? '<span style="color:#f59e0b;font-size:.65rem;font-weight:700;"><i class="fa-solid fa-lock mr-1"></i>Terkunci</span>' : ''}
       </div>
       <div class="flex gap-2 flex-wrap">
-        <button class="btn-download flex-1" onclick="openDownload(${item.id},'${item.title.replace(/'/g,"\\'")}')">
-          <i class="fa-solid fa-download"></i> Unduh
-        </button>
-        ${isKPNO ? `
-        <button class="btn-edit" onclick="openEdit(${item.id})" title="Edit Materi"><i class="fa-solid fa-pen-to-square"></i></button>
-        <button class="btn-delete" onclick="deleteCard(${item.id})" title="Hapus Materi"><i class="fa-solid fa-trash"></i></button>
-        ` : ''}
+        ${dlBtn}
+        ${mktBtns}
       </div>
     </div>
   </div>`;
@@ -1650,6 +1683,7 @@ function fileToBase64(file) {
 
 // ===== EDIT =====
 function openEdit(id) {
+  if (!isMarketing()) { showToast('error','Hanya Marketing yang dapat mengedit materi'); return; }
   const item = mediaData.find(d => d.id === id);
   if (!item) return;
   document.getElementById('edit-id').value = id;
