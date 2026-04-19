@@ -1323,77 +1323,134 @@ async function doUpload() {
 
   if (file) {
     try {
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengonversi file...';
+      // ── Langkah 1: Konversi file ke base64 ──────────────────
+      setProgress(btn, 10, 'Mengonversi file...');
       const base64    = await fileToBase64(file);
       const subFolder = katLabel[kat] || kat;
+      const fileSize  = file.size > 1048576
+        ? (file.size/1048576).toFixed(1) + ' MB'
+        : Math.round(file.size/1024) + ' KB';
 
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mengupload ke Drive...';
+      // Buat item metadata sekarang, kirim bareng payload upload
+      const newItem = {
+        id       : Date.now(),
+        title    : judul,
+        cat      : kat,
+        segment  : segMap[kat] || 'cetak',
+        month    : bulan,
+        isNew,
+        icon     : iconMap[kat]  || 'fa-file',
+        color    : colorMap[kat] || '#f5f5f5',
+        iconColor: icMap[kat]    || '#888',
+        size     : fileSize,
+        thumb    : hasThumb ? thumbSrc : null,
+        driveUrl : null,  // diisi setelah response
+      };
 
-      // Kirim base64 sekaligus via POST → handleUploadToDrive di Apps Script
+      // ── Langkah 2: Upload file + simpan media dalam 1 request ─
+      setProgress(btn, 30, 'Mengupload ke Drive...');
+
+      // Simulasi progress visual selama menunggu server
+      let fakePct = 30;
+      const fakeTimer = setInterval(() => {
+        if (fakePct < 85) {
+          fakePct += 5;
+          setProgress(btn, fakePct, 'Mengupload ke Drive...');
+        }
+      }, 800);
+
       const payload = JSON.stringify({
-        action    : 'uploadToDrive',
+        action    : 'uploadAndSave',   // ✅ 1 request = upload + addMedia
         base64Data: base64,
         fileName  : file.name,
         mimeType  : file.type || 'application/octet-stream',
         subFolder,
         bulan,
-        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO'
+        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
+        item      : newItem            // metadata dikirim sekalian
       });
 
       const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
+      clearInterval(fakeTimer);
       const text = await res.text();
       let r;
       try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
 
       if (!r.ok) {
         showToast('error', 'Gagal upload: ' + (r.msg || 'error tidak diketahui'));
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
+        resetBtn(btn);
         return;
       }
-      driveUrl = r.url;
+
+      // ── Langkah 3: Selesai ───────────────────────────────────
+      setProgress(btn, 100, 'Berhasil!');
+      newItem.driveUrl = r.url;
+      mediaData.unshift(newItem);
+
+      setTimeout(() => {
+        resetBtn(btn);
+        closeModal('upload');
+        activeMonth = bulan;
+        document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+        renderCards();
+        showToast('success', 'Materi berhasil diupload ke Drive!');
+        document.getElementById('up-judul').value    = '';
+        document.getElementById('up-kategori').value = '';
+        document.getElementById('up-bulan').value    = '';
+        document.getElementById('up-isnew').checked  = false;
+        document.getElementById('up-file-name').classList.add('hidden');
+        removeUploadPreview();
+        document.getElementById('up-img-preview').style.display = 'none';
+      }, 600);
 
     } catch(e) {
       showToast('error', 'Gagal upload ke Drive: ' + e.message);
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
-      return;
+      resetBtn(btn);
     }
+  } else {
+    // Tidak ada file — simpan metadata saja (tanpa Drive)
+    const newItem = {
+      id       : Date.now(),
+      title    : judul,
+      cat      : kat,
+      segment  : segMap[kat] || 'cetak',
+      month    : bulan,
+      isNew,
+      icon     : iconMap[kat]  || 'fa-file',
+      color    : colorMap[kat] || '#f5f5f5',
+      iconColor: icMap[kat]    || '#888',
+      size     : '–',
+      thumb    : hasThumb ? thumbSrc : null,
+      driveUrl : null,
+    };
+    try { await apiCall('addMedia', { item: newItem }); } catch(e) {}
+    mediaData.unshift(newItem);
+    resetBtn(btn);
+    closeModal('upload');
+    activeMonth = bulan;
+    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+    renderCards();
+    showToast('success', 'Materi berhasil disimpan!');
   }
+}
 
-  const newItem = {
-    id      : Date.now(),
-    title   : judul,
-    cat     : kat,
-    segment : segMap[kat] || 'cetak',
-    month   : bulan,
-    isNew,
-    icon    : iconMap[kat]  || 'fa-file',
-    color   : colorMap[kat] || '#f5f5f5',
-    iconColor: icMap[kat]   || '#888',
-    size    : file ? (file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB') : '–',
-    thumb   : hasThumb ? thumbSrc : null,
-    driveUrl,
-  };
+// Helper: tampilkan progress di tombol upload
+function setProgress(btn, pct, label) {
+  btn.innerHTML =
+    '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<i class="fa-solid fa-spinner fa-spin"></i>' +
+        '<span>' + label + ' ' + pct + '%</span>' +
+      '</div>' +
+      '<div style="width:100%;background:rgba(255,255,255,.3);border-radius:99px;height:5px;overflow:hidden;">' +
+        '<div style="width:' + pct + '%;background:#fff;height:100%;border-radius:99px;transition:width .4s ease;"></div>' +
+      '</div>' +
+    '</div>';
+}
 
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Menyimpan...';
-  try { await apiCall('addMedia', { item: newItem }); } catch(e) { /* fallback lokal */ }
-  mediaData.unshift(newItem);
-
+function resetBtn(btn) {
   btn.disabled = false;
   btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload Materi';
-  closeModal('upload');
-  activeMonth = bulan;
-  document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
-  renderCards();
-  showToast('success', 'Materi berhasil diupload ke Drive!');
-  document.getElementById('up-judul').value   = '';
-  document.getElementById('up-kategori').value = '';
-  document.getElementById('up-bulan').value    = '';
-  document.getElementById('up-isnew').checked  = false;
-  document.getElementById('up-file-name').classList.add('hidden');
-  removeUploadPreview();
-  document.getElementById('up-img-preview').style.display = 'none';
 }
 
 // Helper: konversi File ke base64
