@@ -754,6 +754,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateBranches();
   setupFileInput();
 
+  // ✅ Load jumlah materi untuk hero stat meski belum login
+  loadMediaCount();
+
   // Cek sesi dari sessionStorage (masih berfungsi dalam tab yang sama)
   const saved = sessionStorage.getItem('sm_user');
   if (saved) {
@@ -762,6 +765,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     onLoginSuccess();
   }
 });
+
+// Ambil data media dari Sheets lalu update hero stat — tanpa perlu login
+async function loadMediaCount() {
+  try {
+    const resp = await apiCall('getMedia');
+    if (resp.ok && Array.isArray(resp.data)) {
+      mediaData = resp.data;
+      updateHeroStat();
+    }
+  } catch(e) {
+    console.warn('loadMediaCount gagal:', e);
+  }
+}
 
 // ===== LOAD MEDIA DARI SHEETS =====
 async function loadMediaFromSheets() {
