@@ -269,7 +269,7 @@
       Unduh brosur, banner, dan materi pemasaran resmi untuk mendukung aktivitas promosi Anda. Tersedia khusus untuk karyawan aktif.
     </p>
     <div class="flex flex-col sm:flex-row gap-3 justify-center mb-16">
-      <button class="btn-primary" onclick="handleLihatMateri()">
+      <button class="btn-primary" onclick="scrollToSection('materi')">
         <i class="fa-solid fa-layer-group mr-2"></i>Lihat Semua Materi
       </button>
       <button class="btn-outline" onclick="openModal('login')">
@@ -278,9 +278,7 @@
     </div>
     <div class="grid grid-cols-3 gap-4 max-w-2xl mx-auto">
       <div class="stat-card text-center">
-        <div class="text-2xl font-sora font-bold text-white" id="hero-stat-materi">
-          <i class="fa-solid fa-spinner fa-spin text-lg opacity-60"></i>
-        </div>
+        <div class="text-2xl font-sora font-bold text-white" id="hero-stat-materi">0</div>
         <div class="text-gray-400 text-xs mt-1">Materi Tersedia</div>
       </div>
       <div class="stat-card text-center">
@@ -939,13 +937,9 @@ async function loadMediaCount() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      const el = document.getElementById('hero-stat-materi');
-      if (el) el.textContent = mediaData.length;
+      updateHeroStat();
     }
   } catch(e) {
-    // Jika gagal load, tampilkan tanda strip agar tidak stuck loading
-    const el = document.getElementById('hero-stat-materi');
-    if (el) el.textContent = '–';
     console.warn('loadMediaCount gagal:', e);
   }
 }
@@ -1439,22 +1433,7 @@ function onLoginSuccess() {
 // ===== HERO STAT =====
 function updateHeroStat() {
   const el = document.getElementById('hero-stat-materi');
-  if (!el) return;
-  const count = mediaData.length;
-  if (count === 0) {
-    el.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-lg opacity-60"></i>';
-  } else {
-    el.textContent = count;
-  }
-}
-
-// Tombol "Lihat Semua Materi": jika sudah login scroll ke materi, jika belum buka login
-function handleLihatMateri() {
-  if (currentUser) {
-    document.getElementById('materi').scrollIntoView({ behavior: 'smooth' });
-  } else {
-    openModal('login');
-  }
+  if (el) el.textContent = mediaData.length;
 }
 
 // ===== CARDS =====
