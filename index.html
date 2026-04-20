@@ -884,6 +884,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   buildMonthTabs();
   populateBranches();
   setupFileInput();
+  setupModalOverlayListeners();
+
+  // Pastikan loading overlay tidak menghalangi tombol saat init
+  showLoadingOverlay(false);
 
   // Cek sesi dari sessionStorage (masih berfungsi dalam tab yang sama)
   const saved = sessionStorage.getItem('sm_user');
@@ -969,11 +973,17 @@ function showLoadingOverlay(show) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'loading-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
     el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div>';
     document.body.appendChild(el);
   }
-  el.style.display = show ? 'flex' : 'none';
+  if (show) {
+    el.style.display = 'flex';
+    el.style.pointerEvents = 'all';
+  } else {
+    el.style.display = 'none';
+    el.style.pointerEvents = 'none';
+  }
 }
 
 function buildMonthTabs() {
@@ -1258,14 +1268,17 @@ function closeModal(name) {
   document.getElementById('modal-' + name).classList.remove('open');
   document.body.style.overflow = '';
 }
-document.querySelectorAll('.modal-overlay').forEach(el => {
-  el.addEventListener('click', (e) => {
-    if (e.target === el) {
-      el.classList.remove('open');
-      document.body.style.overflow = '';
-    }
+// Pasang listener setelah DOM siap (dipanggil dari DOMContentLoaded)
+function setupModalOverlayListeners() {
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target === el) {
+        el.classList.remove('open');
+        document.body.style.overflow = '';
+      }
+    });
   });
-});
+}
 
 function switchToRegister() {
   closeModal('login');
