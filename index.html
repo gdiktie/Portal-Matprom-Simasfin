@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Sora:wght@400;600;700;800&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 <script>
   if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -622,8 +623,8 @@
           <div class="upload-zone" id="up-dropzone" onclick="document.getElementById('up-file').click()" ondragover="handleDragOver(event,'up-dropzone')" ondragleave="handleDragLeave('up-dropzone')" ondrop="handleDrop(event,'up')">
             <i class="fa-solid fa-cloud-arrow-up text-3xl text-red-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-600">Klik atau drag &amp; drop file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP · Maks. 5 file, 50MB/file</div>
-            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip" multiple>
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Maks. 5 file, 50MB/file</div>
+            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
           </div>
           <div id="up-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -702,8 +703,8 @@
           <div class="upload-zone" id="edit-dropzone" onclick="document.getElementById('edit-file').click()" ondragover="handleDragOver(event,'edit-dropzone')" ondragleave="handleDragLeave('edit-dropzone')" ondrop="handleDrop(event,'edit')">
             <i class="fa-solid fa-arrow-up-from-bracket text-2xl text-gray-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-500">Klik atau drag &amp; drop untuk ganti file</div>
-            <div class="text-xs text-gray-400 mt-1">Biarkan kosong jika tidak ingin mengganti</div>
-            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip">
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Biarkan kosong jika tidak ingin mengganti</div>
+            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
           </div>
           <div id="edit-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -1186,7 +1187,10 @@ async function handleMultiFileSelect(fileList) {
   for (let idx = 0; idx < files.length; idx++) {
     const file = files[idx];
     const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
-    const isPDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isPDF   = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isWord  = /\.(doc|docx)$/i.test(file.name);
+    const isExcel = /\.(xls|xlsx)$/i.test(file.name);
+    const isPPT   = /\.(ppt|pptx)$/i.test(file.name);
     let thumbDataUrl = null;
 
     if (isImage) {
@@ -1210,25 +1214,12 @@ async function handleMultiFileSelect(fileList) {
       } catch(e) { /* no thumb for PDF */ }
     }
 
-    upSelectedFiles.push({ file, thumbDataUrl, type: isImage ? 'image' : isPDF ? 'pdf' : 'other' });
+    const fileType = isImage ? 'image' : isPDF ? 'pdf' : isWord ? 'word' : isExcel ? 'excel' : isPPT ? 'ppt' : 'other';
+    upSelectedFiles.push({ file, thumbDataUrl, type: fileType });
 
     // Update slot thumbnail
     const slot = document.getElementById('up-slot-' + idx);
-    const ext = file.name.split('.').pop().toUpperCase();
-    const iconHtml = thumbDataUrl
-      ? `<img src="${thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
-      : `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-           <i class="fa-solid fa-file" style="color:var(--muted);font-size:1.3rem;"></i>
-           <span style="font-size:.55rem;font-weight:700;color:var(--muted);">${ext}</span>
-         </div>`;
-    slot.innerHTML =
-      iconHtml +
-      `<button onclick="removeUploadSlot(${idx})" title="Hapus"
-        style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:none;
-               border-radius:99px;width:18px;height:18px;font-size:.6rem;cursor:pointer;
-               display:flex;align-items:center;justify-content:center;z-index:2;">
-        <i class="fa-solid fa-xmark"></i>
-       </button>`;
+    slot.innerHTML = buildSlotHtml(file, thumbDataUrl, fileType, idx);
   }
 
   // Set first image as legacy thumb for openPreview
@@ -1238,9 +1229,36 @@ async function handleMultiFileSelect(fileList) {
   }
 }
 
+// Helper: build icon HTML for a file slot in the upload preview strip
+function buildSlotHtml(file, thumbDataUrl, fileType, idx) {
+  const ext = file.name.split('.').pop().toUpperCase();
+  const typeStyles = {
+    pdf   : { icon: 'fa-file-pdf',        color: '#F05A28', bg: '#fdebd0' },
+    word  : { icon: 'fa-file-word',        color: '#2b5eb8', bg: '#e8f0fb' },
+    excel : { icon: 'fa-file-excel',       color: '#1a7a3b', bg: '#e6f4ec' },
+    ppt   : { icon: 'fa-file-powerpoint',  color: '#c8390c', bg: '#fce9e4' },
+    image : { icon: 'fa-image',            color: '#8B35CC', bg: '#f3e6fa' },
+    other : { icon: 'fa-file',             color: 'var(--muted)', bg: 'var(--bg)' },
+  };
+  const ts = typeStyles[fileType] || typeStyles.other;
+  const inner = thumbDataUrl
+    ? `<img src="${thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
+    : `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;height:100%;
+                   background:${ts.bg};justify-content:center;">
+         <i class="fa-solid ${ts.icon}" style="color:${ts.color};font-size:1.4rem;"></i>
+         <span style="font-size:.5rem;font-weight:700;color:${ts.color};letter-spacing:.03em;">${ext}</span>
+       </div>`;
+  return inner +
+    `<button onclick="removeUploadSlot(${idx})" title="Hapus"
+      style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;
+             border-radius:99px;width:18px;height:18px;font-size:.6rem;cursor:pointer;
+             display:flex;align-items:center;justify-content:center;z-index:2;">
+      <i class="fa-solid fa-xmark"></i>
+     </button>`;
+}
+
 function removeUploadSlot(idx) {
   upSelectedFiles.splice(idx, 1);
-  // Rebuild strip
   const strip = document.getElementById('up-multi-preview');
   strip.innerHTML = '';
   if (upSelectedFiles.length === 0) {
@@ -1254,21 +1272,7 @@ function removeUploadSlot(idx) {
     const slot = document.createElement('div');
     slot.id = 'up-slot-' + i;
     slot.style.cssText = 'position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-    const ext = entry.file.name.split('.').pop().toUpperCase();
-    const iconHtml = entry.thumbDataUrl
-      ? `<img src="${entry.thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
-      : `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-           <i class="fa-solid fa-file" style="color:var(--muted);font-size:1.3rem;"></i>
-           <span style="font-size:.55rem;font-weight:700;color:var(--muted);">${ext}</span>
-         </div>`;
-    slot.innerHTML =
-      iconHtml +
-      `<button onclick="removeUploadSlot(${i})" title="Hapus"
-        style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:none;
-               border-radius:99px;width:18px;height:18px;font-size:.6rem;cursor:pointer;
-               display:flex;align-items:center;justify-content:center;z-index:2;">
-        <i class="fa-solid fa-xmark"></i>
-       </button>`;
+    slot.innerHTML = buildSlotHtml(entry.file, entry.thumbDataUrl, entry.type, i);
     strip.appendChild(slot);
   });
   const fnEl = document.getElementById('up-file-name');
@@ -1320,9 +1324,11 @@ function openPreview(id) {
     noDescEl.style.display = '';
   }
 
-  // Tombol download
+  // Tombol download — label berbeda untuk single vs multi-file
   const dlBtn  = document.getElementById('preview-dl-btn');
   const lockMsg = document.getElementById('preview-locked-msg');
+  const urlCount = Array.isArray(item.driveUrls) && item.driveUrls.length > 1
+    ? item.driveUrls.length : 0;
   if (locked && !mkt) {
     dlBtn.disabled = true;
     lockMsg.style.display = '';
@@ -1330,9 +1336,11 @@ function openPreview(id) {
     dlBtn.disabled = false;
     lockMsg.style.display = 'none';
   }
+  dlBtn.innerHTML = urlCount > 1
+    ? `<i class="fa-solid fa-file-zipper"></i> Unduh Semua (${urlCount} file · ZIP)`
+    : `<i class="fa-solid fa-download"></i> Unduh Materi`;
 
   // ── Build slides array ───────────────────────────────────────
-  // item.thumbs: array of URLs (multi-file), fallback to item.thumb (single)
   const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
     ? item.thumbs
     : (item.thumb ? [item.thumb] : [null]);
@@ -1432,28 +1440,82 @@ function closePreviewBtn() {
   document.getElementById('preview-next').style.display = 'none';
   document.body.style.overflow = '';
 }
-function triggerPreviewDownload() {
+async function triggerPreviewDownload() {
   if (!previewCurrentId) return;
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
-  // If multi-file, download the current slide's URL
-  if (Array.isArray(item.driveUrls) && item.driveUrls.length > 1) {
-    const url = item.driveUrls[previewSlideIndex] || item.driveUrls[0];
-    if (url) {
-      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      if (match && match[1]) {
-        const a = document.createElement('a');
-        a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-        a.download = item.title || 'matprom';
-        a.target = '_blank'; a.rel = 'noopener noreferrer';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        showToast('success', `File ${previewSlideIndex + 1} sedang diunduh...`);
-        return;
-      }
-    }
+
+  const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls
+    : (item.driveUrl ? [item.driveUrl] : []);
+
+  // Single file — gunakan modal unduh biasa
+  if (urls.length <= 1) {
+    closePreviewBtn();
+    openDownload(item.id, item.title);
+    return;
   }
-  closePreviewBtn();
-  openDownload(item.id, item.title);
+
+  // Multi-file — unduh semua sekaligus sebagai ZIP (fflate)
+  const dlBtn = document.getElementById('preview-dl-btn');
+  dlBtn.disabled = true;
+  dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyiapkan ZIP...';
+
+  try {
+    const fileMap = {};
+    let fetchErrors = 0;
+
+    for (let i = 0; i < urls.length; i++) {
+      dlBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Unduh ${i+1}/${urls.length}...`;
+      const url = urls[i];
+      // Ekstrak file ID dari Drive URL
+      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (!match) { fetchErrors++; continue; }
+      const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+      try {
+        const resp = await fetch(dlUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const buf  = await resp.arrayBuffer();
+        // Coba deteksi ekstensi dari content-disposition atau URL
+        const cd   = resp.headers.get('content-disposition') || '';
+        const cdExt = cd.match(/filename[^;=\n]*=([^;\n]+)/)?.[1]?.trim().replace(/['"]/g,'').match(/\.[^.]+$/)?.[0] || '';
+        const fname = (item.title || 'file').replace(/[^\w\-]/g,'_') + '_' + (i+1) + cdExt;
+        fileMap[fname] = new Uint8Array(buf);
+      } catch(e) { fetchErrors++; }
+    }
+
+    if (Object.keys(fileMap).length === 0) {
+      throw new Error('Semua file gagal diunduh. Periksa koneksi atau coba lagi.');
+    }
+
+    dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Membuat ZIP...';
+
+    // Zip dengan fflate (level 0 = store only, cepat)
+    const zipped = await new Promise((resolve, reject) => {
+      fflate.zip(fileMap, { level: 0 }, (err, data) => {
+        if (err) reject(err); else resolve(data);
+      });
+    });
+
+    const blob   = new Blob([zipped], { type: 'application/zip' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = (item.title || 'materi').replace(/[^\w\-]/g,'_') + '_semua.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 8000);
+
+    const ok = urls.length - fetchErrors;
+    showToast('success', fetchErrors > 0
+      ? `ZIP dibuat (${ok}/${urls.length} file berhasil)`
+      : `Semua ${urls.length} file diunduh sebagai ZIP!`);
+
+  } catch(e) {
+    showToast('error', 'Gagal buat ZIP: ' + e.message);
+  } finally {
+    dlBtn.disabled = false;
+    dlBtn.innerHTML = '<i class="fa-solid fa-download"></i> Unduh Semua (ZIP)';
+  }
 }
 
 // ===== MODAL =====
@@ -1639,18 +1701,43 @@ function updateHeroStat() {
 }
 
 // ===== SEGMENT CONFIG =====
+// Setiap kategori punya segmen sendiri — kolom hanya muncul jika ada data
 const SEGMENT_CONFIG = {
-  cetak: {
-    label: 'Media Promosi Cetak',
-    sub: 'Brosur & Banner siap cetak',
-    iconHtml: '<div class="segment-icon"><i class="fa-solid fa-print"></i></div>',
-    catTabLabel: 'Media Cetak',
+  brosur: {
+    label    : 'Brosur',
+    sub      : 'Brosur promosi siap cetak & distribusi',
+    iconHtml : '<div class="segment-icon" style="background:#fdebd0;color:#F05A28"><i class="fa-solid fa-file-pdf"></i></div>',
+    catTabLabel: 'Brosur',
+  },
+  banner: {
+    label    : 'Banner Digital',
+    sub      : 'Banner untuk media digital & cetak luar ruang',
+    iconHtml : '<div class="segment-icon" style="background:#e8f4fd;color:#3b82f6"><i class="fa-solid fa-image"></i></div>',
+    catTabLabel: 'Banner Digital',
   },
   instagram: {
-    label: 'Konten Instagram',
-    sub: 'Postingan siap pakai untuk sosial media',
-    iconHtml: '<div class="segment-icon" style="background:#f3e6fa;color:#8B35CC"><i class="fa-brands fa-instagram"></i></div>',
+    label    : 'Konten Instagram',
+    sub      : 'Postingan siap pakai untuk sosial media',
+    iconHtml : '<div class="segment-icon" style="background:#f3e6fa;color:#8B35CC"><i class="fa-brands fa-instagram"></i></div>',
     catTabLabel: 'Konten Instagram',
+  },
+  formulir: {
+    label    : 'Formulir & Dokumen',
+    sub      : 'Formulir, dokumen, dan materi administrasi',
+    iconHtml : '<div class="segment-icon" style="background:#f0fdf4;color:#22c55e"><i class="fa-solid fa-file-lines"></i></div>',
+    catTabLabel: 'Formulir & Dokumen',
+  },
+  video: {
+    label    : 'Video Promosi',
+    sub      : 'Video iklan dan materi multimedia',
+    iconHtml : '<div class="segment-icon" style="background:#f5f3ff;color:#8B35CC"><i class="fa-solid fa-circle-play"></i></div>',
+    catTabLabel: 'Video Promosi',
+  },
+  logo: {
+    label    : 'Logo & Panduan',
+    sub      : 'Aset brand, logo, dan panduan identitas visual',
+    iconHtml : '<div class="segment-icon" style="background:#fef9c3;color:#C8922A"><i class="fa-solid fa-star"></i></div>',
+    catTabLabel: 'Logo & Panduan',
   },
 };
 
@@ -1664,12 +1751,12 @@ function renderCards() {
   const filtered = mediaData.filter(d => d.month === activeMonth);
   const q = (document.getElementById('search-input').value || '').toLowerCase();
 
-  // Kumpulkan segmen yang benar-benar punya data di bulan ini
+  // Kumpulkan kategori yang benar-benar punya data di bulan ini (urutan sesuai SEGMENT_CONFIG)
   const activeSegments = Object.keys(SEGMENT_CONFIG).filter(seg =>
-    filtered.some(d => d.segment === seg)
+    filtered.some(d => (d.cat === seg || d.segment === seg))
   );
 
-  // Reset cat-tabs — hanya tampilkan tab untuk segmen yang ada datanya
+  // Reset cat-tabs — hanya tampilkan tab untuk kategori yang ada datanya
   const catTabsEl = document.getElementById('cat-tabs');
   catTabsEl.innerHTML = `<button class="cat-btn ${activeCat === 'all' ? 'active' : ''}" onclick="filterCat('all',this)">Semua</button>`;
   activeSegments.forEach(seg => {
@@ -1677,13 +1764,13 @@ function renderCards() {
     catTabsEl.innerHTML += `<button class="cat-btn ${activeCat === seg ? 'active' : ''}" onclick="filterCat('${seg}',this)">${cfg.catTabLabel}</button>`;
   });
 
-  // Jika filter aktif tidak relevan lagi (segmennya kosong), reset ke 'all'
+  // Jika filter aktif tidak relevan lagi, reset ke 'all'
   if (activeCat !== 'all' && !activeSegments.includes(activeCat)) {
     activeCat = 'all';
     catTabsEl.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === 'Semua'));
   }
 
-  // Render segmen secara dinamis ke dalam container
+  // Render kolom per kategori secara dinamis
   const container = document.getElementById('segments-container');
   container.innerHTML = '';
 
@@ -1693,11 +1780,11 @@ function renderCards() {
     if (!shouldShow) return;
 
     const items = filtered.filter(d =>
-      d.segment === seg &&
+      (d.cat === seg || d.segment === seg) &&
       (d.title.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))
     );
 
-    if (items.length === 0) return; // tidak tampilkan segmen jika tidak ada item
+    if (items.length === 0) return; // kolom tidak muncul jika tidak ada item
 
     const cardsHtml = items.map(item => buildCard(item)).join('');
 
@@ -1898,7 +1985,7 @@ async function doUpload() {
   const iconMap  = {brosur:'fa-file-pdf',banner:'fa-image',instagram:'fa-brands fa-instagram',formulir:'fa-file-lines',video:'fa-circle-play',logo:'fa-star'};
   const colorMap = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
   const icMap    = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
-  const segMap   = {brosur:'cetak',banner:'cetak',instagram:'instagram',formulir:'cetak',video:'cetak',logo:'cetak'};
+  const segMap   = {brosur:'brosur',banner:'banner',instagram:'instagram',formulir:'formulir',video:'video',logo:'logo'};
   const katLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',formulir:'Formulir',video:'Video',logo:'Logo'};
 
   const deskripsi = document.getElementById('up-deskripsi') ? document.getElementById('up-deskripsi').value.trim() : '';
@@ -1924,7 +2011,7 @@ async function doUpload() {
     const thumbSrc = previewImgEl.src && previewImgEl.src.startsWith('data:image') ? previewImgEl.src : null;
     const newItem = {
       id: Date.now(), title: judul, cat: kat,
-      segment: segMap[kat] || 'cetak', month: bulan, isNew,
+      segment: segMap[kat] || kat, month: bulan, isNew,
       icon: iconMap[kat] || 'fa-file', color: colorMap[kat] || '#f5f5f5',
       iconColor: icMap[kat] || '#888', size: '–',
       thumb: thumbSrc, thumbs: thumbSrc ? [thumbSrc] : [], driveUrl: null,
@@ -1962,7 +2049,7 @@ async function doUpload() {
       const newItem = {
         id       : Date.now() + i,
         title    : judul + (totalFiles > 1 ? ` (${i+1}/${totalFiles})` : ''),
-        cat      : kat, segment: segMap[kat] || 'cetak', month: bulan, isNew,
+        cat      : kat, segment: segMap[kat] || kat, month: bulan, isNew,
         icon     : iconMap[kat]  || 'fa-file',
         color    : colorMap[kat] || '#f5f5f5',
         iconColor: icMap[kat]    || '#888',
@@ -1996,7 +2083,7 @@ async function doUpload() {
     const combinedItem = {
       id       : Date.now(),
       title    : judul,
-      cat      : kat, segment: segMap[kat] || 'cetak', month: bulan, isNew,
+      cat      : kat, segment: segMap[kat] || kat, month: bulan, isNew,
       icon     : iconMap[kat]  || 'fa-file',
       color    : colorMap[kat] || '#f5f5f5',
       iconColor: icMap[kat]    || '#888',
@@ -2119,7 +2206,7 @@ async function doEdit() {
   const iconMap = {brosur:'fa-file-pdf',banner:'fa-image',instagram:'fa-brands fa-instagram',formulir:'fa-file-lines',video:'fa-circle-play',logo:'fa-star'};
   const colorMap = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
   const icMap = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
-  const segMap = {brosur:'cetak',banner:'cetak',instagram:'instagram',formulir:'cetak',video:'cetak',logo:'cetak'};
+  const segMap = {brosur:'brosur',banner:'banner',instagram:'instagram',formulir:'formulir',video:'video',logo:'logo'};
 
   const idx = mediaData.findIndex(d => d.id === id);
   if (idx === -1) return;
@@ -2133,7 +2220,7 @@ async function doEdit() {
 
   const updatedItem = {
     ...mediaData[idx],
-    title: judul, cat: kat, segment: segMap[kat] || 'cetak',
+    title: judul, cat: kat, segment: segMap[kat] || kat,
     month: bulan, isNew, icon: iconMap[kat] || 'fa-file',
     color: colorMap[kat] || '#f5f5f5', iconColor: icMap[kat] || '#888',
     size: newFile ? (newFile.size > 1048576 ? (newFile.size/1048576).toFixed(1)+' MB' : Math.round(newFile.size/1024)+' KB') : oldSize,
