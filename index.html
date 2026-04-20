@@ -885,9 +885,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateBranches();
   setupFileInput();
   setupModalOverlayListeners();
-
-  // Pastikan loading overlay tidak menghalangi tombol saat init
-  showLoadingOverlay(false);
+  showLoadingOverlay(false); // Pastikan overlay tidak menghalangi tombol saat init
 
   // Cek sesi dari sessionStorage (masih berfungsi dalam tab yang sama)
   const saved = sessionStorage.getItem('sm_user');
@@ -941,10 +939,11 @@ async function loadMediaCount() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      updateHeroStat();
     }
   } catch(e) {
     console.warn('loadMediaCount gagal:', e);
+  } finally {
+    updateHeroStat(); // Selalu update stat, minimal tampil 0 bukan stuck
   }
 }
 
@@ -973,7 +972,7 @@ function showLoadingOverlay(show) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'loading-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:998;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
     el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div>';
     document.body.appendChild(el);
   }
@@ -1268,7 +1267,6 @@ function closeModal(name) {
   document.getElementById('modal-' + name).classList.remove('open');
   document.body.style.overflow = '';
 }
-// Pasang listener setelah DOM siap (dipanggil dari DOMContentLoaded)
 function setupModalOverlayListeners() {
   document.querySelectorAll('.modal-overlay').forEach(el => {
     el.addEventListener('click', (e) => {
