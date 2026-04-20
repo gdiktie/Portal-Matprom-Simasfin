@@ -614,16 +614,16 @@
           </label>
         </div>
         <div>
-          <label class="input-label">Upload File / Gambar Preview</label>
-          <div class="img-preview-box" id="up-img-preview-box">
-            <img id="up-img-preview" src="" alt="Preview">
-            <button class="remove-preview" onclick="removeUploadPreview()" title="Hapus preview"><i class="fa-solid fa-xmark"></i></button>
-          </div>
+          <label class="input-label">Upload File / Gambar Preview <span style="color:var(--muted);font-weight:400;">(maks. 5 file)</span></label>
+          <!-- Multi-file preview strip -->
+          <div id="up-multi-preview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:10px;"></div>
+          <!-- Hidden img used for thumb extraction (legacy) -->
+          <img id="up-img-preview" src="" alt="Preview" style="display:none;">
           <div class="upload-zone" id="up-dropzone" onclick="document.getElementById('up-file').click()" ondragover="handleDragOver(event,'up-dropzone')" ondragleave="handleDragLeave('up-dropzone')" ondrop="handleDrop(event,'up')">
             <i class="fa-solid fa-cloud-arrow-up text-3xl text-red-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-600">Klik atau drag &amp; drop file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP (maks. 50MB)</div>
-            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip">
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP · Maks. 5 file, 50MB/file</div>
+            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip" multiple>
           </div>
           <div id="up-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -749,11 +749,34 @@
 
 <!-- ===== IMAGE PREVIEW OVERLAY ===== -->
 <div class="preview-overlay" id="preview-overlay" onclick="closePreview(event)">
+  <!-- Carousel nav: prev -->
+  <button id="preview-prev" onclick="previewNav(-1)" title="Sebelumnya"
+    style="position:fixed;left:16px;top:50%;transform:translateY(-50%);z-index:600;
+      background:rgba(255,255,255,.13);border:1.5px solid rgba(255,255,255,.25);color:#fff;
+      border-radius:99px;width:44px;height:44px;font-size:1.1rem;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);
+      transition:background .2s;display:none;">
+    <i class="fa-solid fa-chevron-left"></i>
+  </button>
+  <!-- Carousel nav: next -->
+  <button id="preview-next" onclick="previewNav(1)" title="Berikutnya"
+    style="position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:600;
+      background:rgba(255,255,255,.13);border:1.5px solid rgba(255,255,255,.25);color:#fff;
+      border-radius:99px;width:44px;height:44px;font-size:1.1rem;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);
+      transition:background .2s;display:none;">
+    <i class="fa-solid fa-chevron-right"></i>
+  </button>
+
   <div class="preview-inner">
     <!-- Kolom kiri: gambar/thumbnail -->
     <div class="preview-media-col">
       <button class="preview-close" onclick="closePreviewBtn()"><i class="fa-solid fa-xmark"></i></button>
       <div id="preview-content"></div>
+      <!-- Slide dots for multi-file carousel -->
+      <div id="preview-dots" style="display:none;justify-content:center;gap:6px;margin-top:12px;"></div>
+      <!-- Slide counter -->
+      <div id="preview-slide-counter" style="display:none;color:rgba(255,255,255,.5);font-size:.75rem;text-align:center;margin-top:6px;font-weight:600;"></div>
       <div class="preview-caption" id="preview-caption"></div>
     </div>
     <!-- Kolom kanan: info + deskripsi + tombol -->
@@ -856,6 +879,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   buildMonthTabs();
   populateBranches();
   setupFileInput();
+
+  // Keyboard arrow nav for preview carousel
+  document.addEventListener('keydown', (e) => {
+    const overlay = document.getElementById('preview-overlay');
+    if (!overlay.classList.contains('open')) return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); previewNav(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); previewNav(1); }
+    if (e.key === 'Escape')     { closePreviewBtn(); }
+  });
 
   // ✅ Load jumlah materi untuk hero stat meski belum login
   loadMediaCount();
@@ -963,7 +995,7 @@ function populateBranches() {
 
 function setupFileInput() {
   document.getElementById('up-file').addEventListener('change', function() {
-    handleFileSelect(this.files[0], 'up');
+    handleMultiFileSelect(this.files);
   });
   document.getElementById('edit-file').addEventListener('change', function() {
     handleFileSelect(this.files[0], 'edit');
@@ -1090,23 +1122,157 @@ function handleDrop(e, prefix) {
   e.preventDefault();
   const zoneId = prefix + '-dropzone';
   handleDragLeave(zoneId);
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
-  // Set file to input (for form access)
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  document.getElementById(prefix + '-file').files = dt.files;
-  handleFileSelect(file, prefix);
+  if (prefix === 'up') {
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    // Assign files to input
+    try {
+      const dt = new DataTransfer();
+      const max = Math.min(files.length, 5);
+      for (let i = 0; i < max; i++) dt.items.add(files[i]);
+      document.getElementById('up-file').files = dt.files;
+    } catch(e) {}
+    handleMultiFileSelect(files);
+  } else {
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById(prefix + '-file').files = dt.files;
+    handleFileSelect(file, prefix);
+  }
 }
 
 function removeUploadPreview() {
-  const box = document.getElementById('up-img-preview-box');
-  box.style.display = 'none';
+  upSelectedFiles = [];
+  const strip = document.getElementById('up-multi-preview');
+  strip.innerHTML = '';
+  strip.style.display = 'none';
   document.getElementById('up-img-preview').src = '';
   document.getElementById('up-img-preview').style.display = 'none';
-  box.querySelectorAll('canvas,.preview-badge,.preview-loading').forEach(el => el.remove());
   document.getElementById('up-file').value = '';
   document.getElementById('up-file-name').classList.add('hidden');
+}
+
+// ── Multi-file state for upload modal ──
+let upSelectedFiles = []; // Array of { file, thumbDataUrl, type }
+
+async function handleMultiFileSelect(fileList) {
+  const files = Array.from(fileList).slice(0, 5);
+  if (files.length === 0) return;
+
+  // Validate total
+  if (files.length > 5) { showToast('error', 'Maksimal 5 file sekaligus'); return; }
+
+  upSelectedFiles = [];
+  const strip = document.getElementById('up-multi-preview');
+  strip.innerHTML = '';
+  strip.style.display = 'flex';
+
+  // Show loading placeholder slots
+  files.forEach((f, idx) => {
+    const slot = document.createElement('div');
+    slot.id = 'up-slot-' + idx;
+    slot.style.cssText = 'position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+    slot.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="color:var(--muted);font-size:1.2rem;"></i>';
+    strip.appendChild(slot);
+  });
+
+  // Update file-name label
+  const fnEl = document.getElementById('up-file-name');
+  fnEl.textContent = `📎 ${files.length} file dipilih`;
+  fnEl.classList.remove('hidden');
+
+  for (let idx = 0; idx < files.length; idx++) {
+    const file = files[idx];
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
+    const isPDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    let thumbDataUrl = null;
+
+    if (isImage) {
+      thumbDataUrl = await new Promise(res => {
+        const r = new FileReader();
+        r.onload = e => res(e.target.result);
+        r.readAsDataURL(file);
+      });
+    } else if (isPDF) {
+      try {
+        if (typeof pdfjsLib !== 'undefined') {
+          const arrBuf = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrBuf) }).promise;
+          const page = await pdf.getPage(1);
+          const vp = page.getViewport({ scale: 1.2 });
+          const canvas = document.createElement('canvas');
+          canvas.width = vp.width; canvas.height = vp.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          thumbDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        }
+      } catch(e) { /* no thumb for PDF */ }
+    }
+
+    upSelectedFiles.push({ file, thumbDataUrl, type: isImage ? 'image' : isPDF ? 'pdf' : 'other' });
+
+    // Update slot thumbnail
+    const slot = document.getElementById('up-slot-' + idx);
+    const ext = file.name.split('.').pop().toUpperCase();
+    const iconHtml = thumbDataUrl
+      ? `<img src="${thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
+      : `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+           <i class="fa-solid fa-file" style="color:var(--muted);font-size:1.3rem;"></i>
+           <span style="font-size:.55rem;font-weight:700;color:var(--muted);">${ext}</span>
+         </div>`;
+    slot.innerHTML =
+      iconHtml +
+      `<button onclick="removeUploadSlot(${idx})" title="Hapus"
+        style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:none;
+               border-radius:99px;width:18px;height:18px;font-size:.6rem;cursor:pointer;
+               display:flex;align-items:center;justify-content:center;z-index:2;">
+        <i class="fa-solid fa-xmark"></i>
+       </button>`;
+  }
+
+  // Set first image as legacy thumb for openPreview
+  const firstImage = upSelectedFiles.find(f => f.thumbDataUrl);
+  if (firstImage) {
+    document.getElementById('up-img-preview').src = firstImage.thumbDataUrl;
+  }
+}
+
+function removeUploadSlot(idx) {
+  upSelectedFiles.splice(idx, 1);
+  // Rebuild strip
+  const strip = document.getElementById('up-multi-preview');
+  strip.innerHTML = '';
+  if (upSelectedFiles.length === 0) {
+    strip.style.display = 'none';
+    document.getElementById('up-file').value = '';
+    document.getElementById('up-file-name').classList.add('hidden');
+    document.getElementById('up-img-preview').src = '';
+    return;
+  }
+  upSelectedFiles.forEach((entry, i) => {
+    const slot = document.createElement('div');
+    slot.id = 'up-slot-' + i;
+    slot.style.cssText = 'position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+    const ext = entry.file.name.split('.').pop().toUpperCase();
+    const iconHtml = entry.thumbDataUrl
+      ? `<img src="${entry.thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
+      : `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+           <i class="fa-solid fa-file" style="color:var(--muted);font-size:1.3rem;"></i>
+           <span style="font-size:.55rem;font-weight:700;color:var(--muted);">${ext}</span>
+         </div>`;
+    slot.innerHTML =
+      iconHtml +
+      `<button onclick="removeUploadSlot(${i})" title="Hapus"
+        style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:none;
+               border-radius:99px;width:18px;height:18px;font-size:.6rem;cursor:pointer;
+               display:flex;align-items:center;justify-content:center;z-index:2;">
+        <i class="fa-solid fa-xmark"></i>
+       </button>`;
+    strip.appendChild(slot);
+  });
+  const fnEl = document.getElementById('up-file-name');
+  fnEl.textContent = `📎 ${upSelectedFiles.length} file dipilih`;
 }
 function removeEditPreview() {
   const box = document.getElementById('edit-img-preview-box');
@@ -1120,29 +1286,15 @@ function removeEditPreview() {
 
 // ===== IMAGE PREVIEW OVERLAY =====
 let previewCurrentId = null;
+let previewSlideIndex = 0;
+
 function openPreview(id) {
   const item = mediaData.find(d => d.id === id);
   if (!item) return;
   previewCurrentId = id;
+  previewSlideIndex = 0;
   const mkt    = isMarketing();
   const locked = !!item.locked;
-
-  // ── Media col ───────────────────────────────────────────────
-  const contentEl = document.getElementById('preview-content');
-  const captionEl = document.getElementById('preview-caption');
-  captionEl.textContent = item.month + ' · ' + item.size;
-
-  if (item.thumb) {
-    contentEl.innerHTML = `<img src="${item.thumb}" alt="${item.title}" style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);">`;
-  } else {
-    const catColors = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
-    const catBg     = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
-    contentEl.innerHTML = `
-      <div class="preview-placeholder" style="background:${catBg[item.cat]||'#f5f5f5'}">
-        <i class="fa-solid ${item.icon}" style="color:${catColors[item.cat]||'#888'};font-size:5rem;opacity:.7"></i>
-        <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
-      </div>`;
-  }
 
   // ── Info col ────────────────────────────────────────────────
   document.getElementById('preview-info-title').textContent = item.title;
@@ -1168,7 +1320,7 @@ function openPreview(id) {
     noDescEl.style.display = '';
   }
 
-  // Tombol download di panel kanan
+  // Tombol download
   const dlBtn  = document.getElementById('preview-dl-btn');
   const lockMsg = document.getElementById('preview-locked-msg');
   if (locked && !mkt) {
@@ -1179,8 +1331,87 @@ function openPreview(id) {
     lockMsg.style.display = 'none';
   }
 
+  // ── Build slides array ───────────────────────────────────────
+  // item.thumbs: array of URLs (multi-file), fallback to item.thumb (single)
+  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
+    ? item.thumbs
+    : (item.thumb ? [item.thumb] : [null]);
+
+  renderPreviewSlide(item, slides, 0);
+  updatePreviewNav(slides);
   document.getElementById('preview-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+}
+
+function renderPreviewSlide(item, slides, idx) {
+  const captionEl  = document.getElementById('preview-caption');
+  const contentEl  = document.getElementById('preview-content');
+  const totalSlides = slides.length;
+  const thumb = slides[idx];
+
+  captionEl.textContent = item.month + ' · ' + item.size +
+    (totalSlides > 1 ? ` · File ${idx + 1} dari ${totalSlides}` : '');
+
+  if (thumb) {
+    contentEl.innerHTML = `<img src="${thumb}" alt="${item.title}" style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);">`;
+  } else {
+    const catColors = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
+    const catBg     = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
+    contentEl.innerHTML = `
+      <div class="preview-placeholder" style="background:${catBg[item.cat]||'#f5f5f5'}">
+        <i class="fa-solid ${item.icon}" style="color:${catColors[item.cat]||'#888'};font-size:5rem;opacity:.7"></i>
+        <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
+      </div>`;
+  }
+
+  // Dots
+  const dotsEl    = document.getElementById('preview-dots');
+  const counterEl = document.getElementById('preview-slide-counter');
+  if (totalSlides > 1) {
+    dotsEl.style.display = 'flex';
+    dotsEl.innerHTML = slides.map((_, i) =>
+      `<span onclick="previewNavTo(${i})" style="width:${i===idx?'20px':'8px'};height:8px;border-radius:99px;
+        background:${i===idx?'#fff':'rgba(255,255,255,.35)'};cursor:pointer;transition:all .2s;display:inline-block;"></span>`
+    ).join('');
+    counterEl.style.display = 'block';
+    counterEl.textContent = `${idx + 1} / ${totalSlides}`;
+  } else {
+    dotsEl.style.display = 'none';
+    counterEl.style.display = 'none';
+  }
+}
+
+function updatePreviewNav(slides) {
+  const prevBtn = document.getElementById('preview-prev');
+  const nextBtn = document.getElementById('preview-next');
+  if (slides.length > 1) {
+    prevBtn.style.display = 'flex';
+    nextBtn.style.display = 'flex';
+  } else {
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+  }
+}
+
+function previewNav(dir) {
+  const item = mediaData.find(d => d.id === previewCurrentId);
+  if (!item) return;
+  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
+    ? item.thumbs
+    : (item.thumb ? [item.thumb] : [null]);
+  const total = slides.length;
+  previewSlideIndex = (previewSlideIndex + dir + total) % total;
+  renderPreviewSlide(item, slides, previewSlideIndex);
+}
+
+function previewNavTo(idx) {
+  const item = mediaData.find(d => d.id === previewCurrentId);
+  if (!item) return;
+  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
+    ? item.thumbs
+    : (item.thumb ? [item.thumb] : [null]);
+  previewSlideIndex = idx;
+  renderPreviewSlide(item, slides, previewSlideIndex);
 }
 
 function copyDesc() {
@@ -1197,12 +1428,30 @@ function closePreview(e) {
 }
 function closePreviewBtn() {
   document.getElementById('preview-overlay').classList.remove('open');
+  document.getElementById('preview-prev').style.display = 'none';
+  document.getElementById('preview-next').style.display = 'none';
   document.body.style.overflow = '';
 }
 function triggerPreviewDownload() {
   if (!previewCurrentId) return;
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
+  // If multi-file, download the current slide's URL
+  if (Array.isArray(item.driveUrls) && item.driveUrls.length > 1) {
+    const url = item.driveUrls[previewSlideIndex] || item.driveUrls[0];
+    if (url) {
+      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        const a = document.createElement('a');
+        a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+        a.download = item.title || 'matprom';
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        showToast('success', `File ${previewSlideIndex + 1} sedang diunduh...`);
+        return;
+      }
+    }
+  }
   closePreviewBtn();
   openDownload(item.id, item.title);
 }
@@ -1494,6 +1743,15 @@ function buildCard(item) {
        </div>
        <div class="thumb-overlay"><i class="fa-solid fa-eye thumb-overlay-icon"></i></div>`;
 
+  const multiFileBadge = (Array.isArray(item.thumbs) && item.thumbs.length > 1) || (Array.isArray(item.driveUrls) && item.driveUrls.length > 1)
+    ? `<span style="position:absolute;bottom:10px;left:10px;z-index:3;background:rgba(26,35,64,.75);
+        color:#fff;border-radius:8px;padding:3px 9px;font-size:.65rem;font-weight:700;
+        display:flex;align-items:center;gap:4px;backdrop-filter:blur(4px);">
+        <i class="fa-solid fa-layer-group" style="font-size:.6rem;"></i>
+        ${(item.thumbs||item.driveUrls||[]).length} Slide
+       </span>`
+    : '';
+
   const dlBtn = canDl
     ? `<button class="btn-download flex-1" onclick="openDownload(${item.id},'${item.title.replace(/'/g,"\'")}')">
          <i class="fa-solid fa-download"></i> Unduh
@@ -1525,6 +1783,7 @@ function buildCard(item) {
       ${thumbHtml}
       ${item.isNew && !locked ? '<span class="badge-new">✦ NEW</span>' : ''}
       ${locked ? '<span class="badge-locked"><i class="fa-solid fa-lock" style="font-size:.6rem;"></i> TERKUNCI</span>' : ''}
+      ${multiFileBadge}
     </div>
     <div class="p-4">
       <div class="mb-2 flex items-center justify-between">
@@ -1629,9 +1888,6 @@ function confirmDownload() {
 }
 
 // ===== UPLOAD =====
-// Strategi: file dikonversi base64 lalu dikirim SEKALIGUS via POST (1 request).
-// ✅ Tidak pakai PropertiesService → tidak ada quota error.
-// ✅ Hanya 1 round-trip ke Apps Script → jauh lebih cepat.
 async function doUpload() {
   const judul = document.getElementById('up-judul').value.trim();
   const kat   = document.getElementById('up-kategori').value;
@@ -1645,135 +1901,147 @@ async function doUpload() {
   const segMap   = {brosur:'cetak',banner:'cetak',instagram:'instagram',formulir:'cetak',video:'cetak',logo:'cetak'};
   const katLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',formulir:'Formulir',video:'Video',logo:'Logo'};
 
-  const file        = document.getElementById('up-file').files[0];
-  const previewImgEl= document.getElementById('up-img-preview');
-  const thumbSrc    = previewImgEl.src || null;
-  const hasThumb    = thumbSrc && thumbSrc.startsWith('data:image');
-
-  const btn = document.querySelector('#modal-upload .btn-red-full');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Mempersiapkan...';
-
-  let driveUrl = null;
-
   const deskripsi = document.getElementById('up-deskripsi') ? document.getElementById('up-deskripsi').value.trim() : '';
   const isLocked  = !!(document.getElementById('up-locked') && document.getElementById('up-locked').checked);
 
-  if (file) {
-    try {
-      // ── Langkah 1: Konversi file ke base64 ──────────────────
-      setProgress(btn, 10, 'Mengonversi file...');
-      const base64    = await fileToBase64(file);
-      const subFolder = katLabel[kat] || kat;
-      const fileSize  = file.size > 1048576
-        ? (file.size/1048576).toFixed(1) + ' MB'
-        : Math.round(file.size/1024) + ' KB';
+  const btn = document.querySelector('#modal-upload .btn-red-full');
+  btn.disabled = true;
 
-      // Buat item metadata sekarang, kirim bareng payload upload
-      const newItem = {
-        id       : Date.now(),
-        title    : judul,
-        cat      : kat,
-        segment  : segMap[kat] || 'cetak',
-        month    : bulan,
-        isNew,
-        icon     : iconMap[kat]  || 'fa-file',
-        color    : colorMap[kat] || '#f5f5f5',
-        iconColor: icMap[kat]    || '#888',
-        size     : fileSize,
-        thumb    : hasThumb ? thumbSrc : null,
-        driveUrl : null,  // diisi setelah response
-        deskripsi: deskripsi || '',
-        locked   : isLocked,
-      };
+  // Collect files — from upSelectedFiles (multi) or legacy single input
+  const filesToUpload = upSelectedFiles.length > 0
+    ? upSelectedFiles
+    : (() => {
+        const f = document.getElementById('up-file').files[0];
+        if (!f) return [];
+        const previewImgEl = document.getElementById('up-img-preview');
+        const thumb = previewImgEl.src && previewImgEl.src.startsWith('data:image') ? previewImgEl.src : null;
+        return [{ file: f, thumbDataUrl: thumb, type: f.type.startsWith('image/') ? 'image' : 'other' }];
+      })();
 
-      // ── Langkah 2: Upload file + simpan media dalam 1 request ─
-      setProgress(btn, 30, 'Mengupload ke Drive...');
-
-      // Simulasi progress visual selama menunggu server
-      let fakePct = 30;
-      const fakeTimer = setInterval(() => {
-        if (fakePct < 85) {
-          fakePct += 5;
-          setProgress(btn, fakePct, 'Mengupload ke Drive...');
-        }
-      }, 800);
-
-      const payload = JSON.stringify({
-        action    : 'uploadAndSave',   // ✅ 1 request = upload + addMedia
-        base64Data: base64,
-        fileName  : file.name,
-        mimeType  : file.type || 'application/octet-stream',
-        subFolder,
-        bulan,
-        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
-        item      : newItem            // metadata dikirim sekalian
-      });
-
-      const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
-      clearInterval(fakeTimer);
-      const text = await res.text();
-      let r;
-      try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
-
-      if (!r.ok) {
-        showToast('error', 'Gagal upload: ' + (r.msg || 'error tidak diketahui'));
-        resetBtn(btn);
-        return;
-      }
-
-      // ── Langkah 3: Selesai ───────────────────────────────────
-      setProgress(btn, 100, 'Berhasil!');
-      newItem.driveUrl = r.url;
-      mediaData.unshift(newItem);
-
-      setTimeout(() => {
-        resetBtn(btn);
-        closeModal('upload');
-        activeMonth = bulan;
-        document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
-        renderCards();
-        showToast('success', 'Materi berhasil diupload ke Drive!');
-        document.getElementById('up-judul').value    = '';
-        document.getElementById('up-kategori').value = '';
-        document.getElementById('up-bulan').value    = '';
-        document.getElementById('up-isnew').checked  = false;
-        document.getElementById('up-locked').checked  = false;
-        document.getElementById('up-deskripsi').value  = '';
-        document.getElementById('up-file-name').classList.add('hidden');
-        removeUploadPreview();
-        document.getElementById('up-img-preview').style.display = 'none';
-      }, 600);
-
-    } catch(e) {
-      showToast('error', 'Gagal upload ke Drive: ' + e.message);
-      resetBtn(btn);
-    }
-  } else {
-    // Tidak ada file — simpan metadata saja (tanpa Drive)
+  if (filesToUpload.length === 0) {
+    // No file — save metadata only
+    const previewImgEl = document.getElementById('up-img-preview');
+    const thumbSrc = previewImgEl.src && previewImgEl.src.startsWith('data:image') ? previewImgEl.src : null;
     const newItem = {
-      id       : Date.now(),
-      title    : judul,
-      cat      : kat,
-      segment  : segMap[kat] || 'cetak',
-      month    : bulan,
-      isNew,
-      icon     : iconMap[kat]  || 'fa-file',
-      color    : colorMap[kat] || '#f5f5f5',
-      iconColor: icMap[kat]    || '#888',
-      size     : '–',
-      thumb    : hasThumb ? thumbSrc : null,
-      driveUrl : null,
+      id: Date.now(), title: judul, cat: kat,
+      segment: segMap[kat] || 'cetak', month: bulan, isNew,
+      icon: iconMap[kat] || 'fa-file', color: colorMap[kat] || '#f5f5f5',
+      iconColor: icMap[kat] || '#888', size: '–',
+      thumb: thumbSrc, thumbs: thumbSrc ? [thumbSrc] : [], driveUrl: null,
+      driveUrls: [], deskripsi: deskripsi || '', locked: isLocked,
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
-    resetBtn(btn);
+    btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
     document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
     renderCards();
     showToast('success', 'Materi berhasil disimpan!');
+    resetUploadForm();
+    return;
   }
+
+  // Upload files one by one
+  const totalFiles = filesToUpload.length;
+  const driveUrls  = [];
+  const thumbs     = [];
+  let   totalSize  = 0;
+
+  try {
+    for (let i = 0; i < totalFiles; i++) {
+      const { file, thumbDataUrl } = filesToUpload[i];
+      totalSize += file.size;
+
+      const pct = Math.round(10 + (i / totalFiles) * 75);
+      setProgress(btn, pct, `Mengupload file ${i+1}/${totalFiles}...`);
+
+      const base64    = await fileToBase64(file);
+      const subFolder = katLabel[kat] || kat;
+
+      const newItem = {
+        id       : Date.now() + i,
+        title    : judul + (totalFiles > 1 ? ` (${i+1}/${totalFiles})` : ''),
+        cat      : kat, segment: segMap[kat] || 'cetak', month: bulan, isNew,
+        icon     : iconMap[kat]  || 'fa-file',
+        color    : colorMap[kat] || '#f5f5f5',
+        iconColor: icMap[kat]    || '#888',
+        size     : file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB',
+        thumb    : thumbDataUrl || null,
+        driveUrl : null, deskripsi: deskripsi || '', locked: isLocked,
+      };
+
+      const payload = JSON.stringify({
+        action: 'uploadAndSave', base64Data: base64,
+        fileName: file.name, mimeType: file.type || 'application/octet-stream',
+        subFolder, bulan, uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
+        item: newItem
+      });
+
+      const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
+      const text = await res.text();
+      let r;
+      try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
+      if (!r.ok) throw new Error(r.msg || 'Error tidak diketahui');
+
+      driveUrls.push(r.url);
+      if (thumbDataUrl) thumbs.push(thumbDataUrl);
+    }
+
+    // ── Build a single combined item for multi-file carousel ──
+    setProgress(btn, 95, 'Menyimpan metadata...');
+    const sizeLabel = totalSize > 1048576
+      ? (totalSize/1048576).toFixed(1)+' MB' : Math.round(totalSize/1024)+' KB';
+
+    const combinedItem = {
+      id       : Date.now(),
+      title    : judul,
+      cat      : kat, segment: segMap[kat] || 'cetak', month: bulan, isNew,
+      icon     : iconMap[kat]  || 'fa-file',
+      color    : colorMap[kat] || '#f5f5f5',
+      iconColor: icMap[kat]    || '#888',
+      size     : totalFiles > 1 ? `${totalFiles} file · ${sizeLabel}` : sizeLabel,
+      thumb    : thumbs[0] || null,
+      thumbs   : thumbs,
+      driveUrl : driveUrls[0] || null,
+      driveUrls: driveUrls,
+      deskripsi: deskripsi || '',
+      locked   : isLocked,
+    };
+
+    // Save the combined metadata record
+    try { await apiPost('addMedia', { item: combinedItem }); } catch(e) {}
+    mediaData.unshift(combinedItem);
+
+    setProgress(btn, 100, 'Berhasil!');
+    setTimeout(() => {
+      btn.disabled = false;
+      resetBtn(btn);
+      closeModal('upload');
+      activeMonth = bulan;
+      document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+      renderCards();
+      showToast('success', totalFiles > 1
+        ? `${totalFiles} file berhasil diupload ke Drive!`
+        : 'Materi berhasil diupload ke Drive!');
+      resetUploadForm();
+    }, 600);
+
+  } catch(e) {
+    showToast('error', 'Gagal upload: ' + e.message);
+    btn.disabled = false;
+    resetBtn(btn);
+  }
+}
+
+function resetUploadForm() {
+  document.getElementById('up-judul').value    = '';
+  document.getElementById('up-kategori').value = '';
+  document.getElementById('up-bulan').value    = '';
+  document.getElementById('up-isnew').checked  = false;
+  document.getElementById('up-locked').checked = false;
+  document.getElementById('up-deskripsi').value = '';
+  removeUploadPreview();
 }
 
 // Helper: tampilkan progress di tombol upload
