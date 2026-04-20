@@ -833,79 +833,48 @@ async function apiCall(action, payload = {}) {
   catch(e) { throw new Error('Respons server tidak valid'); }
 }
 
-// Kirim write request ke Apps Script via hidden form POST di iframe.
-// Ini satu-satunya cara yang benar-benar melewati CORS tanpa perlu ubah server.
-// Respons dibaca via GET setelah jeda singkat.
-function iframePost(url, bodyStr) {
-  return new Promise((resolve) => {
-    const iframe = document.createElement('iframe');
-    iframe.name = '_apif_' + Date.now();
-    iframe.style.cssText = 'display:none;position:fixed;width:0;height:0;';
-    document.body.appendChild(iframe);
-
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.target = iframe.name;
-    form.style.display = 'none';
-
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'payload';
-    input.value = bodyStr;
-    form.appendChild(input);
-    document.body.appendChild(form);
-
-    form.submit();
-    setTimeout(() => {
-      try { document.body.removeChild(form); } catch(e) {}
-      try { document.body.removeChild(iframe); } catch(e) {}
-      resolve();
-    }, 2000);
-  });
-}
-
+// Kirim write ke Apps Script via GET. 
+// Untuk menghindari "URI malformed" pada teks Unicode & panjang,
+// field deskripsi di-encode khusus menggunakan encodeURIComponent yang aman.
 async function apiPost(action, payload = {}) {
   let safePayload = { ...payload };
   if (safePayload.item) {
     const item = { ...safePayload.item };
-    // Hapus thumb base64 — terlalu besar, server tidak perlu re-upload
+    // Hapus thumb base64 — terlalu besar, tidak perlu dikirim ulang ke server
     if (item.thumb && typeof item.thumb === 'string' && item.thumb.startsWith('data:')) {
       delete item.thumb;
     }
     safePayload.item = item;
   }
 
-  const bodyStr = JSON.stringify({ action, ...safePayload });
-
-  // Coba via GET dulu (paling cepat, batas ~8KB URL)
-  const getUrl = API_URL + '?data=' + encodeURIComponent(bodyStr);
-  if (getUrl.length < 7500) {
-    try {
-      const res = await fetch(getUrl, { method: 'GET', redirect: 'follow' });
-      const text = await res.text();
-      const parsed = JSON.parse(text);
-      if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak');
-      return parsed;
-    } catch(e) {
-      if (e.message && e.message !== 'Failed to fetch') throw e;
-      // Jika fetch error, fallback ke iframe
-    }
+  // JSON.stringify lalu encodeURIComponent — ini yang benar untuk Unicode
+  // (tidak perlu btoa, encodeURIComponent sudah handle semua Unicode)
+  let bodyStr;
+  try {
+    bodyStr = JSON.stringify({ action, ...safePayload });
+  } catch(e) {
+    throw new Error('Gagal membuat payload: ' + e.message);
   }
 
-  // Fallback: iframe form POST (tidak ada CORS, tidak ada batas URL)
-  await iframePost(API_URL, bodyStr);
-  // Verifikasi hasil setelah server memproses
-  await new Promise(r => setTimeout(r, 1500));
-  if (action === 'editMedia' && safePayload.item) {
-    const check = await apiCall('getMedia');
-    if (check.ok && Array.isArray(check.data)) {
-      const saved = check.data.find(d => String(d.id) === String(safePayload.item.id));
-      if (!saved) throw new Error('Item tidak ditemukan setelah disimpan');
-      return { ok: true };
+  let encoded;
+  try {
+    encoded = encodeURIComponent(bodyStr);
+  } catch(e) {
+    // Jika masih gagal encode, bersihkan karakter non-ASCII dari deskripsi
+    if (safePayload.item && safePayload.item.deskripsi) {
+      safePayload.item.deskripsi = safePayload.item.deskripsi
+        .replace(/[^ -]/g, c => encodeURIComponent(c));
     }
+    bodyStr  = JSON.stringify({ action, ...safePayload });
+    encoded  = encodeURIComponent(bodyStr);
   }
-  return { ok: true };
+
+  const getUrl = API_URL + '?data=' + encoded;
+  const res  = await fetch(getUrl, { method: 'GET', redirect: 'follow' });
+  const text = await res.text();
+  const parsed = JSON.parse(text);
+  if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak');
+  return parsed;
 }
 
 
@@ -916,30 +885,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateBranches();
   setupFileInput();
 
-  // ✅ Load jumlah materi untuk hero stat meski belum login
-  loadMediaCount();
-
   // Cek sesi dari sessionStorage (masih berfungsi dalam tab yang sama)
   const saved = sessionStorage.getItem('sm_user');
   if (saved) {
     currentUser = JSON.parse(saved);
-    await loadMediaFromSheets();
+    await loadMediaFromSheets();  // load dulu — sudah include hero stat
     onLoginSuccess();
 
-    // ✅ Auto-refresh setiap 30 detik agar divisi lain dapat update lock & deskripsi terbaru
+    // ✅ Polling realtime setiap 4 detik — update lock & deskripsi langsung terlihat
     setInterval(async () => {
       try {
         const resp = await apiCall('getMedia');
         if (resp.ok && Array.isArray(resp.data)) {
-          mediaData = resp.data.map(item => ({
+          const normalized = resp.data.map(item => ({
             ...item,
             locked   : item.locked    === true,
             deskripsi: item.deskripsi || '',
           }));
+          // Merge: update field server tapi pertahankan thumb lokal (base64)
+          normalized.forEach(serverItem => {
+            const localIdx = mediaData.findIndex(d => String(d.id) === String(serverItem.id));
+            if (localIdx !== -1) {
+              const localThumb = mediaData[localIdx].thumb;
+              // Pakai thumb lokal jika server tidak punya (base64 tidak disimpan di server)
+              if (!serverItem.thumb && localThumb) serverItem.thumb = localThumb;
+              mediaData[localIdx] = serverItem;
+            } else {
+              mediaData.push(serverItem); // item baru dari divisi lain
+            }
+          });
+          // Hapus item yang sudah didelete di server
+          const serverIds = normalized.map(d => String(d.id));
+          mediaData = mediaData.filter(d => serverIds.includes(String(d.id)));
           renderCards();
         }
-      } catch(e) { /* silent — jangan ganggu user dengan error */ }
-    }, 30000);
+      } catch(e) { /* silent */ }
+    }, 4000);
+  } else {
+    // Tidak ada sesi — tetap load stat untuk hero section
+    loadMediaCount();
   }
 });
 
@@ -965,14 +949,13 @@ async function loadMediaFromSheets() {
   try {
     showLoadingOverlay(true);
     const resp = await apiCall('getMedia');
-    if (resp.ok && resp.data.length > 0) {
-      // ✅ Normalisasi: pastikan setiap item punya field locked & deskripsi
-      // supaya data lama (sebelum fitur ini ada) tidak lolos guard
+    if (resp.ok && Array.isArray(resp.data)) {
       mediaData = resp.data.map(item => ({
         ...item,
-        locked   : item.locked    === true,   // pastikan boolean, bukan undefined
-        deskripsi: item.deskripsi || '',       // pastikan string, bukan undefined
+        locked   : item.locked    === true,
+        deskripsi: item.deskripsi || '',
       }));
+      updateHeroStat(); // ← langsung update stat setelah data masuk
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
@@ -1525,12 +1508,19 @@ function buildCard(item) {
 
   const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
   const clickable = (!locked || mkt);
+  // Overlay gelap semi-transparan di atas thumbnail saat locked
+  const lockOverlay = (locked && !mkt)
+    ? `<div style="position:absolute;inset:0;background:rgba(30,35,60,0.45);z-index:2;border-radius:0;display:flex;align-items:center;justify-content:center;">
+         <i class="fa-solid fa-lock" style="color:rgba(255,255,255,0.85);font-size:2rem;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5));"></i>
+       </div>`
+    : '';
 
   return `
   <div class="${cardClass}" id="card-${item.id}">
     <div class="card-thumb" onclick="${clickable ? `openPreview(${item.id})` : ''}"
          style="${!clickable ? 'cursor:default;pointer-events:none;' : ''}">
       ${thumbHtml}
+      ${lockOverlay}
       ${item.isNew && !locked ? '<span class="badge-new">✦ NEW</span>' : ''}
       ${locked ? '<span class="badge-locked"><i class="fa-solid fa-lock" style="font-size:.6rem;"></i> TERKUNCI</span>' : ''}
     </div>
@@ -1885,7 +1875,8 @@ async function doEdit() {
     month: bulan, isNew, icon: iconMap[kat] || 'fa-file',
     color: colorMap[kat] || '#f5f5f5', iconColor: icMap[kat] || '#888',
     size: newFile ? (newFile.size > 1048576 ? (newFile.size/1048576).toFixed(1)+' MB' : Math.round(newFile.size/1024)+' KB') : oldSize,
-    thumb: hasNewThumb ? editThumbSrc : (previewVisible ? oldThumb : null),
+    // Pertahankan thumb lama jika tidak ada thumb baru — jangan sampai hilang
+    thumb: hasNewThumb ? editThumbSrc : (previewVisible ? oldThumb : oldThumb),
     deskripsi: deskripsi,
     locked: isLocked,
   };
