@@ -845,14 +845,31 @@ async function apiCall(action, payload = {}) {
   catch(e) { throw new Error('Respons server tidak valid'); }
 }
 
-// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia, toggleLock)
-// Menghindari URL terlalu panjang yang menyebabkan data terpotong di server
+// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia)
+// Jika POST gagal (misal CORS redirect), fallback ke GET dengan data yang sama
 async function apiPost(action, payload = {}) {
   const body = JSON.stringify({ action, ...payload });
-  const res  = await fetch(API_URL, { method: 'POST', body, redirect: 'follow' });
-  const text = await res.text();
-  try { return JSON.parse(text); }
-  catch(e) { throw new Error('Respons server tidak valid'); }
+  let text = '';
+  try {
+    const res = await fetch(API_URL, { method: 'POST', body, redirect: 'follow' });
+    text = await res.text();
+    const parsed = JSON.parse(text);
+    // Jika server mengembalikan ok: false, lempar error agar caller bisa handle
+    if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak permintaan');
+    return parsed;
+  } catch(e) {
+    // Fallback: coba via GET jika POST gagal (CORS/redirect issue)
+    try {
+      const url = API_URL + '?data=' + encodeURIComponent(body);
+      const res2 = await fetch(url, { method: 'GET', redirect: 'follow' });
+      const text2 = await res2.text();
+      const parsed2 = JSON.parse(text2);
+      if (parsed2 && parsed2.ok === false) throw new Error(parsed2.msg || 'Server menolak permintaan');
+      return parsed2;
+    } catch(e2) {
+      throw new Error('Gagal terhubung ke server: ' + (e2.message || e.message));
+    }
+  }
 }
 
 
@@ -872,6 +889,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentUser = JSON.parse(saved);
     await loadMediaFromSheets();
     onLoginSuccess();
+
+    // ✅ Auto-refresh setiap 30 detik agar divisi lain dapat update lock & deskripsi terbaru
+    setInterval(async () => {
+      try {
+        const resp = await apiCall('getMedia');
+        if (resp.ok && Array.isArray(resp.data)) {
+          mediaData = resp.data.map(item => ({
+            ...item,
+            locked   : item.locked    === true,
+            deskripsi: item.deskripsi || '',
+          }));
+          renderCards();
+        }
+      } catch(e) { /* silent — jangan ganggu user dengan error */ }
+    }, 30000);
   }
 });
 
@@ -1483,9 +1515,14 @@ async function doRefreshMedia() {
   try {
     const resp = await apiCall('getMedia');
     if (resp.ok && Array.isArray(resp.data)) {
-      mediaData = resp.data;
+      // ✅ Normalisasi sama seperti loadMediaFromSheets agar locked & deskripsi konsisten
+      mediaData = resp.data.map(item => ({
+        ...item,
+        locked   : item.locked    === true,
+        deskripsi: item.deskripsi || '',
+      }));
       renderCards();
-      showToast('success', 'Materi berhasil diperbarui');
+      showToast('success', 'Data berhasil diperbarui dari server');
     }
   } catch(e) { showToast('error', 'Gagal memuat ulang'); }
   finally {
@@ -1802,15 +1839,28 @@ async function doEdit() {
   const btn = document.querySelector('#modal-edit .btn-red-full');
   btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Menyimpan...';
 
-  try { await apiPost('editMedia', { item: updatedItem }); } catch(e) { /* fallback lokal */ }
+  // Simpan item lama untuk rollback
+  const oldItem = { ...mediaData[idx] };
+
+  // Optimistic update lokal dulu
   mediaData[idx] = updatedItem;
 
-  btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
-  closeModal('edit');
-  activeMonth = bulan;
-  document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
-  renderCards();
-  showToast('success','Materi berhasil diperbarui!');
+  try {
+    const result = await apiPost('editMedia', { item: updatedItem });
+    if (!result || result.ok === false) throw new Error(result ? result.msg : 'Server menolak');
+    // Sukses: tutup modal dan render
+    btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
+    closeModal('edit');
+    activeMonth = bulan;
+    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+    renderCards();
+    showToast('success','Materi berhasil diperbarui & tersimpan!');
+  } catch(e) {
+    // Rollback jika server gagal
+    mediaData[idx] = oldItem;
+    btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
+    showToast('error', 'Gagal menyimpan ke server: ' + e.message + '. Perubahan dibatalkan.');
+  }
 }
 
 async function toggleLock(id) {
@@ -1819,10 +1869,21 @@ async function toggleLock(id) {
   if (idx === -1) return;
   const newLocked = !mediaData[idx].locked;
   const updatedItem = { ...mediaData[idx], locked: newLocked };
-  try { await apiPost('editMedia', { item: updatedItem }); } catch(e) {}
+
+  // Optimistic update dulu untuk UX responsif
   mediaData[idx] = updatedItem;
   renderCards();
-  showToast('success', newLocked ? '🔒 Materi dikunci' : '🔓 Materi dibuka');
+
+  try {
+    const result = await apiPost('editMedia', { item: updatedItem });
+    if (!result || result.ok === false) throw new Error(result ? result.msg : 'Gagal');
+    showToast('success', newLocked ? '🔒 Materi dikunci & tersimpan' : '🔓 Materi dibuka & tersimpan');
+  } catch(e) {
+    // Rollback jika server gagal
+    mediaData[idx] = { ...updatedItem, locked: !newLocked };
+    renderCards();
+    showToast('error', 'Gagal menyimpan ke server: ' + e.message);
+  }
 }
 
 async function deleteCard(id) {
