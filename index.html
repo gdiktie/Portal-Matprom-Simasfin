@@ -427,41 +427,37 @@
   <!-- Content: logged in -->
   <div id="content-section" class="hidden">
 
+    <!-- Upload btn for KPNO — hanya tombol, tanpa judul kelola -->
+    <div id="kpno-toolbar" class="hidden mb-6 flex justify-end">
+      <button class="btn-upload-main" onclick="openModal('upload')">
+        <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
+      </button>
+    </div>
+
     <!-- Month Tabs -->
     <div class="mb-8">
-
-      <!-- Baris 1: Judul kiri · Search + Upload kanan -->
-      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+      <!-- Row 1: judul kiri, search + refresh kanan — sejajar -->
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h2 class="section-title font-sora">Materi Promosi</h2>
           <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+        <!-- Search + Refresh dalam satu baris -->
+        <div class="flex items-center gap-2">
           <div class="relative">
             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-            <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9" style="width:200px;" oninput="filterCards()">
+            <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9 w-52" oninput="filterCards()">
           </div>
-          <div id="kpno-toolbar" class="hidden">
-            <button class="btn-upload-main" onclick="openModal('upload')" style="white-space:nowrap;">
-              <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
-            </button>
-          </div>
+          <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
+            style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
+            onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
         </div>
       </div>
-
-      <!-- Baris 2: Tab bulan (flex-1) + Refresh di ujung kanan — satu baris penuh -->
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-        <div class="flex flex-wrap gap-2" id="month-tabs" style="flex:1;">
-          <button class="month-tab">Januari</button><button class="month-tab">Februari</button><button class="month-tab">Maret</button><button class="month-tab active">April</button><button class="month-tab">Mei</button><button class="month-tab">Juni</button><button class="month-tab">Juli</button><button class="month-tab">Agustus</button><button class="month-tab">September</button><button class="month-tab">Oktober</button><button class="month-tab">November</button><button class="month-tab">Desember</button>
-        </div>
-        <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
-          style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
-          onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
-          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
-          <i class="fa-solid fa-rotate-right"></i>
-        </button>
-      </div>
-
+      <!-- Row 2: month tabs full width -->
+      <div class="flex flex-wrap gap-2 mb-4" id="month-tabs"><button class="month-tab">Januari</button><button class="month-tab">Februari</button><button class="month-tab">Maret</button><button class="month-tab active">April</button><button class="month-tab">Mei</button><button class="month-tab">Juni</button><button class="month-tab">Juli</button><button class="month-tab">Agustus</button><button class="month-tab">September</button><button class="month-tab">Oktober</button><button class="month-tab">November</button><button class="month-tab">Desember</button></div>
       <div class="flex flex-wrap gap-2" id="cat-tabs">
         <button class="cat-btn active" onclick="filterCat('all',this)">Semua</button>
       </div>
@@ -1029,17 +1025,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const resp = await apiCall('getMedia');
         if (resp.ok && Array.isArray(resp.data)) {
-          mediaData = resp.data
-            .map(item => ({
-              ...item,
-              locked   : item.locked    === true,
-              deskripsi: item.deskripsi || '',
-            }))
-            .sort((a, b) => {
-              const idA = typeof a.id === 'number' ? a.id : parseInt(a.id, 10) || 0;
-              const idB = typeof b.id === 'number' ? b.id : parseInt(b.id, 10) || 0;
-              return idA - idB;
-            });
+          mediaData = resp.data.map(item => ({
+            ...item,
+            locked   : item.locked    === true,
+            deskripsi: item.deskripsi || '',
+          }));
           renderCards();
         }
       } catch(e) { /* silent — jangan ganggu user dengan error */ }
@@ -1055,8 +1045,8 @@ async function loadMediaCount() {
     if (resp && resp.ok && Array.isArray(resp.data)) {
       const total = resp.data.length;
       if (el && total > 0) el.textContent = total;
-      // Simpan ke mediaData hanya jika belum login DAN mediaData masih kosong (jangan overwrite sesi aktif)
-      if (!currentUser && mediaData.length === 0 && total > 0) {
+      // Simpan ke mediaData hanya jika belum login (jangan overwrite sesi aktif)
+      if (!currentUser && total > 0) {
         mediaData = resp.data.map(item => ({
           ...item,
           locked   : item.locked    === true,
@@ -1077,17 +1067,11 @@ async function loadMediaFromSheets() {
     if (resp.ok && resp.data.length > 0) {
       // ✅ Normalisasi: pastikan setiap item punya field locked & deskripsi
       // supaya data lama (sebelum fitur ini ada) tidak lolos guard
-      mediaData = resp.data
-        .map(item => ({
-          ...item,
-          locked   : item.locked    === true,   // pastikan boolean, bukan undefined
-          deskripsi: item.deskripsi || '',       // pastikan string, bukan undefined
-        }))
-        .sort((a, b) => {
-          const idA = typeof a.id === 'number' ? a.id : parseInt(a.id, 10) || 0;
-          const idB = typeof b.id === 'number' ? b.id : parseInt(b.id, 10) || 0;
-          return idA - idB;
-        });
+      mediaData = resp.data.map(item => ({
+        ...item,
+        locked   : item.locked    === true,   // pastikan boolean, bukan undefined
+        deskripsi: item.deskripsi || '',       // pastikan string, bukan undefined
+      }));
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
@@ -1812,6 +1796,7 @@ function onLoginSuccess() {
   // Hanya Marketing yang dapat toolbar upload
   if (isMarketing()) {
     document.getElementById('kpno-toolbar').classList.remove('hidden');
+    document.getElementById('kpno-toolbar').classList.add('flex');
   } else {
     document.getElementById('kpno-toolbar').classList.add('hidden');
   }
@@ -1872,14 +1857,7 @@ function renderCards() {
   // Jika belum login, jangan render apapun
   if (!currentUser) return;
 
-  // Urutkan stabil berdasarkan id (ascending) agar urutan kartu tidak acak saat refresh
-  const filtered = mediaData
-    .filter(d => d.month === activeMonth)
-    .sort((a, b) => {
-      const idA = typeof a.id === 'number' ? a.id : parseInt(a.id, 10) || 0;
-      const idB = typeof b.id === 'number' ? b.id : parseInt(b.id, 10) || 0;
-      return idA - idB;
-    });
+  const filtered = mediaData.filter(d => d.month === activeMonth);
   const q = (document.getElementById('search-input').value || '').toLowerCase();
 
   // Kumpulkan kategori yang benar-benar punya data di bulan ini (urutan sesuai SEGMENT_CONFIG)
@@ -2031,19 +2009,11 @@ async function doRefreshMedia() {
     const resp = await apiCall('getMedia');
     if (resp.ok && Array.isArray(resp.data)) {
       // ✅ Normalisasi sama seperti loadMediaFromSheets agar locked & deskripsi konsisten
-      mediaData = resp.data
-        .map(item => ({
-          ...item,
-          locked   : item.locked    === true,
-          deskripsi: item.deskripsi || '',
-        }))
-        .sort((a, b) => {
-          const idA = typeof a.id === 'number' ? a.id : parseInt(a.id, 10) || 0;
-          const idB = typeof b.id === 'number' ? b.id : parseInt(b.id, 10) || 0;
-          return idA - idB;
-        });
-
-      // Deteksi entri corrupt (__CAROUSEL_TEMP / __SLIDE_) dan tampilkan peringatan
+      mediaData = resp.data.map(item => ({
+        ...item,
+        locked   : item.locked    === true,
+        deskripsi: item.deskripsi || '',
+      }));
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -2190,21 +2160,12 @@ async function doUpload() {
       const fileSize   = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
 
       // Kirim dengan uploadAndSave — action yang sudah ada di Apps Script
-      // PENTING: gunakan judul asli sejak awal (bukan CAROUSEL_TEMP) agar data di Sheet
-      // tidak corrupt jika langkah editMedia/merge gagal di kemudian hari.
-      // File ke-2 dst ditandai dengan suffix _SLIDE_N hanya jika multi-file,
-      // dan akan dihapus setelah merge berhasil.
-      const isFirstFile = (i === 0);
       const tempItem = {
-        id       : tempId,
-        title    : isFirstFile ? judul : `${judul}__SLIDE_${i}`,
-        cat      : kat, segment: segMap[kat]||kat, month: bulan,
-        isNew    : isFirstFile ? isNew : false,
-        icon     : iconMap[kat]||'fa-file', color: colorMap[kat]||'#f5f5f5',
+        id: tempId, title: judul + (totalFiles > 1 ? `__CAROUSEL_TEMP_${i}` : ''),
+        cat: kat, segment: segMap[kat]||kat, month: bulan, isNew: false,
+        icon: iconMap[kat]||'fa-file', color: colorMap[kat]||'#f5f5f5',
         iconColor: icMap[kat]||'#888', size: fileSize,
-        thumb    : null, driveUrl: null,
-        deskripsi: isFirstFile ? (deskripsi || '') : '',
-        locked   : isFirstFile ? isLocked : false,
+        thumb: null, driveUrl: null, deskripsi: '', locked: false,
       };
 
       const payload = JSON.stringify({
@@ -2246,24 +2207,11 @@ async function doUpload() {
       locked   : isLocked,
     };
 
-    // Update item pertama jadi carousel gabungan — coba hingga 3 kali agar tidak gagal
+    // Update item pertama jadi carousel gabungan
     setProgress(btn, 93, 'Menyimpan metadata...');
-    let editOk = false;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const r = await apiPost('editMedia', { item: combinedItem });
-        if (r && r.ok !== false) { editOk = true; break; }
-      } catch(e) {
-        if (attempt === 2) console.warn('editMedia gagal setelah 3 percobaan:', e);
-        await new Promise(res => setTimeout(res, 800));
-      }
-    }
-    if (!editOk) {
-      // Fallback: simpan ulang sebagai item baru dengan data lengkap
-      try { await apiPost('addMedia', { item: combinedItem }); } catch(e2) {}
-    }
+    try { await apiPost('editMedia', { item: combinedItem }); } catch(e) {}
 
-    // Hapus item-item slide sisa (indeks 1 ke atas) yang hanya temporary
+    // Hapus item-item sisa (indeks 1 ke atas) yang hanya temporary
     for (let i = 1; i < tempIds.length; i++) {
       try { await apiPost('deleteMedia', { id: String(tempIds[i]) }); } catch(e) {}
     }
