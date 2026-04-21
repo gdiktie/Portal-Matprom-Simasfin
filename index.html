@@ -429,53 +429,41 @@
 
     <!-- Month Tabs -->
     <div class="mb-8">
-      <!-- Layout: kiri = judul + bulan (flex-1), kanan = toolbar (fixed width) -->
-      <div style="display:flex;align-items:flex-start;gap:16px;">
 
-        <!-- Kolom kiri: judul + tab bulan + cat tabs -->
-        <div style="flex:1;min-width:0;">
-          <div style="margin-bottom:14px;">
-            <h2 class="section-title font-sora">Materi Promosi</h2>
-            <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
-          </div>
-          <!-- Month tabs — memanjang penuh sesuai kolom kiri -->
-          <div class="flex flex-wrap gap-2 mb-3" id="month-tabs">
-            <button class="month-tab">Januari</button><button class="month-tab">Februari</button><button class="month-tab">Maret</button><button class="month-tab active">April</button><button class="month-tab">Mei</button><button class="month-tab">Juni</button><button class="month-tab">Juli</button><button class="month-tab">Agustus</button><button class="month-tab">September</button><button class="month-tab">Oktober</button><button class="month-tab">November</button><button class="month-tab">Desember</button>
-          </div>
-          <div class="flex flex-wrap gap-2" id="cat-tabs">
-            <button class="cat-btn active" onclick="filterCat('all',this)">Semua</button>
-          </div>
+      <!-- Baris 1: Judul kiri · Search + Upload kanan -->
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <div>
+          <h2 class="section-title font-sora">Materi Promosi</h2>
+          <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
         </div>
-
-        <!-- Kolom kanan: search + upload + refresh (rata kanan, sejajar ujung bulan) -->
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;padding-top:2px;">
-          <!-- Baris atas: search -->
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <div class="relative">
             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
             <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9" style="width:200px;" oninput="filterCards()">
           </div>
-          <!-- Baris bawah: upload + refresh + cleanup -->
-          <div style="display:flex;gap:8px;align-items:center;">
-            <div id="kpno-toolbar" class="hidden">
-              <button class="btn-upload-main" onclick="openModal('upload')" style="white-space:nowrap;">
-                <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
-              </button>
-            </div>
-            <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
-              style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
-              onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
-              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
-              <i class="fa-solid fa-rotate-right"></i>
-            </button>
-            <button id="btn-cleanup" onclick="cleanupCorruptData()" title="Bersihkan data materi corrupt"
-              style="display:none;background:#fff;border:1.5px solid #fbbf24;border-radius:10px;padding:9px 13px;cursor:pointer;color:#92400e;font-size:.85rem;transition:all .15s;align-items:center;flex-shrink:0;"
-              onmouseover="this.style.background='#fef9c3'"
-              onmouseout="this.style.background='#fff'">
-              🧹
+          <div id="kpno-toolbar" class="hidden">
+            <button class="btn-upload-main" onclick="openModal('upload')" style="white-space:nowrap;">
+              <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
             </button>
           </div>
         </div>
+      </div>
 
+      <!-- Baris 2: Tab bulan (flex-1) + Refresh di ujung kanan — satu baris penuh -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div class="flex flex-wrap gap-2" id="month-tabs" style="flex:1;">
+          <button class="month-tab">Januari</button><button class="month-tab">Februari</button><button class="month-tab">Maret</button><button class="month-tab active">April</button><button class="month-tab">Mei</button><button class="month-tab">Juni</button><button class="month-tab">Juli</button><button class="month-tab">Agustus</button><button class="month-tab">September</button><button class="month-tab">Oktober</button><button class="month-tab">November</button><button class="month-tab">Desember</button>
+        </div>
+        <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
+          style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
+          onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+      </div>
+
+      <div class="flex flex-wrap gap-2" id="cat-tabs">
+        <button class="cat-btn active" onclick="filterCat('all',this)">Semua</button>
       </div>
     </div>
 
@@ -1824,12 +1812,8 @@ function onLoginSuccess() {
   // Hanya Marketing yang dapat toolbar upload
   if (isMarketing()) {
     document.getElementById('kpno-toolbar').classList.remove('hidden');
-    const cleanupBtn = document.getElementById('btn-cleanup');
-    if (cleanupBtn) cleanupBtn.style.display = 'flex';
   } else {
     document.getElementById('kpno-toolbar').classList.add('hidden');
-    const cleanupBtn = document.getElementById('btn-cleanup');
-    if (cleanupBtn) cleanupBtn.style.display = 'none';
   }
   renderCards();
 }
@@ -2060,13 +2044,6 @@ async function doRefreshMedia() {
         });
 
       // Deteksi entri corrupt (__CAROUSEL_TEMP / __SLIDE_) dan tampilkan peringatan
-      const corruptItems = mediaData.filter(d =>
-        d.title && (d.title.includes('__CAROUSEL_TEMP_') || d.title.includes('__SLIDE_'))
-      );
-      if (corruptItems.length > 0 && isMarketing()) {
-        showToast('error', `⚠️ ${corruptItems.length} materi corrupt ditemukan. Gunakan tombol 🧹 Bersihkan.`);
-      }
-
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -2074,30 +2051,6 @@ async function doRefreshMedia() {
   finally {
     if (btn) { btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i>'; btn.disabled = false; }
   }
-}
-
-// Bersihkan entri corrupt (__CAROUSEL_TEMP_ / __SLIDE_) yang terlanjur tersimpan di Sheet
-async function cleanupCorruptData() {
-  if (!isMarketing()) return;
-  const corrupt = mediaData.filter(d =>
-    d.title && (d.title.includes('__CAROUSEL_TEMP_') || d.title.includes('__SLIDE_'))
-  );
-  if (corrupt.length === 0) {
-    showToast('success', 'Tidak ada data corrupt yang perlu dibersihkan.');
-    return;
-  }
-  if (!confirm(`Ditemukan ${corrupt.length} materi dengan judul corrupt (sisa upload carousel yang gagal merge).\n\nHapus semua data corrupt ini?`)) return;
-
-  let deleted = 0;
-  for (const item of corrupt) {
-    try {
-      await apiPost('deleteMedia', { id: String(item.id) });
-      mediaData = mediaData.filter(d => d.id !== item.id);
-      deleted++;
-    } catch(e) {}
-  }
-  renderCards();
-  showToast('success', `✅ ${deleted} data corrupt berhasil dihapus.`);
 }
 
 function filterCat(cat, btn) {
