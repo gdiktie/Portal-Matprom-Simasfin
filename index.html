@@ -312,12 +312,8 @@
   <!-- Content: logged in -->
   <div id="content-section" class="hidden">
 
-    <!-- Upload btn for KPNO -->
-    <div id="kpno-toolbar" class="hidden mb-8 flex items-center justify-between flex-wrap gap-3">
-      <div>
-        <h2 class="section-title font-sora">Kelola Materi Promosi</h2>
-        <p class="section-sub">Upload dan kelola semua materi pemasaran.</p>
-      </div>
+    <!-- Upload btn for KPNO — hanya tombol, tanpa judul kelola -->
+    <div id="kpno-toolbar" class="hidden mb-6 flex justify-end">
       <button class="btn-upload-main" onclick="openModal('upload')">
         <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
       </button>
@@ -378,7 +374,7 @@
         <div class="text-gray-400 text-xs mt-1">mbc@simasfinance.co.id</div>
         <div class="text-blue-600 text-xs font-semibold mt-2"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Kirim Email</div>
       </a>
-      <a href="https://docs.google.com/forms/d/e/1FAIpQLSdjkzxTkDCvg2ih2PdXmv-1DXkyC2fnA2L2sRa_Olo_LOaUQ/viewform?pli=1" target="_blank" rel="noopener noreferrer" class="border rounded-2xl p-5 text-center block hover:shadow-lg transition-all" style="text-decoration:none;color:inherit;border-color:#e0e7ff;" onmouseover="this.style.borderColor='#a5b4fc'" onmouseout="this.style.borderColor='#e0e7ff'">
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLSdjkzxTkDCvg2ih2PdXmv-1DXkyC2fnA2L2sRa__Olo_LOaUQ/viewform" target="_blank" rel="noopener noreferrer" class="border rounded-2xl p-5 text-center block hover:shadow-lg transition-all" style="text-decoration:none;color:inherit;border-color:#e0e7ff;" onmouseover="this.style.borderColor='#a5b4fc'" onmouseout="this.style.borderColor='#e0e7ff'">
         <div class="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3" style="background:#eef2ff;">
           <i class="fa-solid fa-pen-ruler" style="color:#6366f1;"></i>
         </div>
@@ -921,13 +917,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadMediaCount() {
   try {
     const resp = await apiCall('getMedia');
-    if (resp.ok && Array.isArray(resp.data)) {
-      mediaData = resp.data.map(item => ({
-        ...item,
-        locked   : item.locked    === true,
-        deskripsi: item.deskripsi || '',
-      }));
-      updateHeroStat();
+    if (resp.ok && Array.isArray(resp.data) && resp.data.length > 0) {
+      // Hanya update mediaData jika belum login (agar tidak timpa data sesi aktif)
+      if (!currentUser) {
+        mediaData = resp.data.map(item => ({
+          ...item,
+          locked   : item.locked    === true,
+          deskripsi: item.deskripsi || '',
+        }));
+      }
+      // Langsung set angka di hero — pakai resp.data.length supaya akurat
+      const el = document.getElementById('hero-stat-materi');
+      if (el) el.textContent = resp.data.length;
     }
   } catch(e) {
     console.warn('loadMediaCount gagal:', e);
@@ -1697,7 +1698,7 @@ function onLoginSuccess() {
 // ===== HERO STAT =====
 function updateHeroStat() {
   const el = document.getElementById('hero-stat-materi');
-  if (el) el.textContent = mediaData.length;
+  if (el && mediaData.length > 0) el.textContent = mediaData.length;
 }
 
 // ===== SEGMENT CONFIG =====
@@ -2029,7 +2030,7 @@ async function doUpload() {
     return;
   }
 
-  // Upload files one by one
+  // Upload files one by one to Drive only — NO separate addMedia per file
   const totalFiles = filesToUpload.length;
   const driveUrls  = [];
   const thumbs     = [];
@@ -2040,42 +2041,49 @@ async function doUpload() {
       const { file, thumbDataUrl } = filesToUpload[i];
       totalSize += file.size;
 
-      const pct = Math.round(10 + (i / totalFiles) * 75);
+      const pct = Math.round(10 + (i / totalFiles) * 80);
       setProgress(btn, pct, `Mengupload file ${i+1}/${totalFiles}...`);
 
       const base64    = await fileToBase64(file);
       const subFolder = katLabel[kat] || kat;
 
-      const newItem = {
-        id       : Date.now() + i,
-        title    : judul + (totalFiles > 1 ? ` (${i+1}/${totalFiles})` : ''),
-        cat      : kat, segment: segMap[kat] || kat, month: bulan, isNew,
-        icon     : iconMap[kat]  || 'fa-file',
-        color    : colorMap[kat] || '#f5f5f5',
-        iconColor: icMap[kat]    || '#888',
-        size     : file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB',
-        thumb    : thumbDataUrl || null,
-        driveUrl : null, deskripsi: deskripsi || '', locked: isLocked,
-      };
-
+      // Upload file ke Drive saja — TIDAK simpan sebagai item terpisah
       const payload = JSON.stringify({
-        action: 'uploadAndSave', base64Data: base64,
-        fileName: file.name, mimeType: file.type || 'application/octet-stream',
-        subFolder, bulan, uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
-        item: newItem
+        action    : 'uploadFileOnly',   // hanya upload, tidak addMedia
+        base64Data: base64,
+        fileName  : file.name,
+        mimeType  : file.type || 'application/octet-stream',
+        subFolder,
+        bulan,
+        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
       });
 
-      const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
-      const text = await res.text();
       let r;
-      try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
-      if (!r.ok) throw new Error(r.msg || 'Error tidak diketahui');
+      try {
+        const res  = await fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' });
+        const text = await res.text();
+        r = JSON.parse(text);
+      } catch(e) {
+        // Fallback: coba action uploadAndSave tapi hanya ambil URL-nya
+        const payload2 = JSON.stringify({
+          action: 'uploadAndSave', base64Data: base64,
+          fileName: file.name, mimeType: file.type || 'application/octet-stream',
+          subFolder, bulan, uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
+          skipSave: true,
+          item: { id: Date.now() + i, title: judul, cat: kat, segment: segMap[kat]||kat, month: bulan }
+        });
+        const res2 = await fetch(API_URL, { method: 'POST', body: payload2, redirect: 'follow' });
+        const t2 = await res2.text();
+        r = JSON.parse(t2);
+      }
+
+      if (!r || !r.ok) throw new Error((r && r.msg) || 'Gagal upload file ' + (i+1));
 
       driveUrls.push(r.url);
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
     }
 
-    // ── Build a single combined item for multi-file carousel ──
+    // ── Simpan SATU item gabungan untuk semua file carousel ──
     setProgress(btn, 95, 'Menyimpan metadata...');
     const sizeLabel = totalSize > 1048576
       ? (totalSize/1048576).toFixed(1)+' MB' : Math.round(totalSize/1024)+' KB';
@@ -2096,7 +2104,7 @@ async function doUpload() {
       locked   : isLocked,
     };
 
-    // Save the combined metadata record
+    // Simpan satu record ke Sheets via addMedia
     try { await apiPost('addMedia', { item: combinedItem }); } catch(e) {}
     mediaData.unshift(combinedItem);
 
