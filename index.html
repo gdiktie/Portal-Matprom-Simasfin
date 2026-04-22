@@ -2033,84 +2033,120 @@ async function doUpload() {
     return;
   }
 
-  // ✅ OPTIMIZED: Upload semua file ke Drive SECARA PARALEL menggunakan action 'uploadOnly'
-  // Setelah semua URL terkumpul, baru simpan 1 baris metadata ke Sheet (addMedia sekali saja).
-  // Hasilnya: upload N file ≈ secepat upload 1 file (paralel, bukan serial).
+  // ✅ UPLOAD LANGSUNG KE DRIVE — tanpa GitHub, tanpa POST redirect issue
+  // Strategi:
+  //   • Gunakan GET ?data= (bukan POST) → Apps Script tidak redirect, tidak stuck
+  //   • Upload per-file BERURUTAN tapi progress akurat per file selesai
+  //   • Timeout 90 detik per file agar tidak hang selamanya
+  //   • Satu addMedia di akhir → Sheet hanya ditulis sekali
   const totalFiles = filesToUpload.length;
   const thumbs     = [];
   let   totalSize  = 0;
 
+  // Helper: fetch dengan timeout agar tidak stuck selamanya
+  async function fetchWithTimeout(url, options, timeoutMs = 90000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') throw new Error('Timeout — server tidak merespons dalam 90 detik');
+      throw err;
+    }
+  }
+
+  // Helper: satu upload file ke Drive via GET ?data= (menghindari POST redirect issue)
+  async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulan, uploadedBy) {
+    const bodyObj = JSON.stringify({
+      action: 'uploadOnly',
+      base64Data, fileName, mimeType,
+      subFolder, bulan, uploadedBy,
+    });
+
+    // Coba POST dulu (lebih stabil untuk payload besar)
+    let text = '';
+    try {
+      const res = await fetchWithTimeout(API_URL, {
+        method: 'POST', body: bodyObj, redirect: 'follow'
+      });
+      text = await res.text();
+      const r = JSON.parse(text);
+      if (r && r.ok) return r;
+      // Jika server balas ok:false, langsung throw
+      throw new Error(r.msg || 'Server menolak');
+    } catch (postErr) {
+      // Fallback: GET via ?data= (Apps Script selalu terima GET)
+      try {
+        const url2 = API_URL + '?data=' + encodeURIComponent(bodyObj);
+        const res2 = await fetchWithTimeout(url2, { method: 'GET', redirect: 'follow' });
+        const text2 = await res2.text();
+        const r2 = JSON.parse(text2);
+        if (!r2 || !r2.ok) throw new Error(r2 ? r2.msg : 'Gagal upload');
+        return r2;
+      } catch (getErr) {
+        throw new Error(getErr.message || postErr.message);
+      }
+    }
+  }
+
   try {
     setProgress(btn, 5, `Mempersiapkan ${totalFiles} file...`);
 
-    // ── STEP 1: Konversi semua file ke base64 (masih lokal, cepat) ──
-    const filePayloads = await Promise.all(filesToUpload.map(async ({ file, thumbDataUrl }, i) => {
+    // ── STEP 1: Konversi semua file ke base64 lokal (cepat) ──────────
+    const filePayloads = [];
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const { file, thumbDataUrl } = filesToUpload[i];
       totalSize += file.size;
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
       const base64 = await fileToBase64(file);
-      return {
-        base64Data: base64,
-        fileName  : file.name,
-        mimeType  : file.type || 'application/octet-stream',
-        thumbDataUrl,
-        fileSize  : file.size,
-      };
-    }));
+      filePayloads.push({ base64Data: base64, fileName: file.name, mimeType: file.type || 'application/octet-stream' });
+      setProgress(btn, 5 + Math.round((i + 1) / totalFiles * 10), `Membaca file ${i+1}/${totalFiles}...`);
+    }
 
-    setProgress(btn, 15, `Mengupload ${totalFiles} file ke Drive secara paralel...`);
+    // ── STEP 2: Upload ke Drive satu per satu — progress nyata per file ──
+    // (Serial lebih andal untuk Apps Script yang throttle concurrent request)
+    const subFolder  = katLabel[kat] || kat;
+    const uploadedBy = currentUser ? currentUser.idcard4 : 'KPNO';
+    const driveUrls  = [];
 
-    // ── STEP 2: Upload semua file PARALEL ke Drive (uploadOnly) ──────
-    // Setiap request TIDAK menulis ke Sheet, hanya simpan file ke Drive.
-    const subFolder   = katLabel[kat] || kat;
-    const uploadedBy  = currentUser ? currentUser.idcard4 : 'KPNO';
+    for (let i = 0; i < filePayloads.length; i++) {
+      const { base64Data, fileName, mimeType } = filePayloads[i];
+      const pctStart = 15 + Math.round(i / totalFiles * 72);
+      const pctEnd   = 15 + Math.round((i + 1) / totalFiles * 72);
 
-    // Buat semua Promise upload sekaligus (paralel penuh)
-    const uploadPromises = filePayloads.map(({ base64Data, fileName, mimeType }) => {
-      const payload = JSON.stringify({
-        action: 'uploadOnly',
-        base64Data, fileName, mimeType,
-        subFolder, bulan, uploadedBy,
-      });
-      return fetch(API_URL, { method: 'POST', body: payload, redirect: 'follow' })
-        .then(res => res.text())
-        .then(text => {
-          try { return JSON.parse(text); }
-          catch(e) { throw new Error('Respons server tidak valid untuk file: ' + fileName); }
-        })
-        .then(r => {
-          if (!r || !r.ok) throw new Error((r && r.msg) || 'Gagal upload: ' + fileName);
-          return r; // { ok, fileId, url, dlUrl }
-        });
-    });
+      // Animasi micro-progress dalam rentang pct file ini
+      let pct = pctStart;
+      const tick = setInterval(() => {
+        if (pct < pctEnd - 1) { pct++; setProgress(btn, pct, `Mengupload file ${i+1}/${totalFiles}...`); }
+      }, 300);
 
-    // Animasi progress saat upload berjalan (polling sederhana)
-    let progressTick = 15;
-    const progressInterval = setInterval(() => {
-      if (progressTick < 85) {
-        progressTick += Math.random() * 4;
-        setProgress(btn, Math.round(progressTick), `Mengupload ke Drive...`);
+      try {
+        const r = await uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulan, uploadedBy);
+        driveUrls.push(r.url);
+      } finally {
+        clearInterval(tick);
       }
-    }, 400);
 
-    // Tunggu semua upload selesai
-    const results = await Promise.all(uploadPromises);
-    clearInterval(progressInterval);
+      setProgress(btn, pctEnd, `File ${i+1}/${totalFiles} selesai ✓`);
+    }
 
-    const driveUrls = results.map(r => r.url);
-
-    // ── STEP 3: Simpan 1 baris metadata gabungan ke Sheet (addMedia sekali) ──
+    // ── STEP 3: Simpan 1 baris metadata ke Sheet (addMedia sekali saja) ──
     setProgress(btn, 90, 'Menyimpan metadata...');
 
     const sizeLabel = totalSize > 1048576
-      ? (totalSize/1048576).toFixed(1)+' MB' : Math.round(totalSize/1024)+' KB';
+      ? (totalSize / 1048576).toFixed(1) + ' MB'
+      : Math.round(totalSize / 1024) + ' KB';
 
     const combinedItem = {
       id       : Date.now(),
       title    : judul,
-      cat      : kat, segment: segMap[kat]||kat, month: bulan, isNew,
-      icon     : iconMap[kat]||'fa-file',
-      color    : colorMap[kat]||'#f5f5f5',
-      iconColor: icMap[kat]||'#888',
+      cat      : kat, segment: segMap[kat] || kat, month: bulan, isNew,
+      icon     : iconMap[kat] || 'fa-file',
+      color    : colorMap[kat] || '#f5f5f5',
+      iconColor: icMap[kat] || '#888',
       size     : totalFiles > 1 ? `${totalFiles} file · ${sizeLabel}` : sizeLabel,
       thumb    : thumbs[0] || null,
       thumbs   : thumbs,
@@ -2120,9 +2156,7 @@ async function doUpload() {
       locked   : isLocked,
     };
 
-    // Simpan ke Sheet — 1 request saja, tidak perlu hapus temp item
     await apiPost('addMedia', { item: combinedItem });
-
     mediaData.unshift(combinedItem);
 
     setProgress(btn, 100, 'Berhasil!');
@@ -2131,15 +2165,16 @@ async function doUpload() {
       resetBtn(btn);
       closeModal('upload');
       activeMonth = bulan;
-      document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+      document.querySelectorAll('.month-tab').forEach(b =>
+        b.classList.toggle('active', b.textContent === bulan));
       renderCards();
       showToast('success', totalFiles > 1
-        ? `${totalFiles} file berhasil diupload ke Drive secara paralel!`
+        ? `${totalFiles} file berhasil diupload ke Drive!`
         : 'Materi berhasil diupload ke Drive!');
       resetUploadForm();
     }, 600);
 
-  } catch(e) {
+  } catch (e) {
     showToast('error', 'Gagal upload: ' + e.message);
     btn.disabled = false;
     resetBtn(btn);
