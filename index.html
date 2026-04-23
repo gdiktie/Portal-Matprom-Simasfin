@@ -841,7 +841,12 @@ async function apiCall(action, payload = {}) {
   const url  = API_URL + '?data=' + encodeURIComponent(body);
   const res  = await fetch(url, { method: 'GET', redirect: 'follow' });
   const text = await res.text();
-  try { return JSON.parse(text); }
+  try {
+    // Cari JSON valid (Apps Script kadang menambah prefix HTML)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    return JSON.parse(text);
+  }
   catch(e) { throw new Error('Respons server tidak valid'); }
 }
 
@@ -849,12 +854,21 @@ async function apiCall(action, payload = {}) {
 // Jika POST gagal (misal CORS redirect), fallback ke GET dengan data yang sama
 async function apiPost(action, payload = {}) {
   const body = JSON.stringify({ action, ...payload });
-  let text = '';
+  const extractJson = (text) => {
+    try {
+      const m = text.match(/\{[\s\S]*\}/);
+      return m ? JSON.parse(m[0]) : JSON.parse(text);
+    } catch(e) { return null; }
+  };
   try {
-    const res = await fetch(API_URL, { method: 'POST', body, redirect: 'follow' });
-    text = await res.text();
-    const parsed = JSON.parse(text);
-    // Jika server mengembalikan ok: false, lempar error agar caller bisa handle
+    const res = await fetch(API_URL, {
+      method: 'POST', body,
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    const text = await res.text();
+    const parsed = extractJson(text);
+    if (!parsed) throw new Error('Respons server tidak valid');
     if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak permintaan');
     return parsed;
   } catch(e) {
@@ -863,11 +877,15 @@ async function apiPost(action, payload = {}) {
       const url = API_URL + '?data=' + encodeURIComponent(body);
       const res2 = await fetch(url, { method: 'GET', redirect: 'follow' });
       const text2 = await res2.text();
-      const parsed2 = JSON.parse(text2);
+      const parsed2 = extractJson(text2);
+      if (!parsed2) throw new Error('Respons server tidak valid');
       if (parsed2 && parsed2.ok === false) throw new Error(parsed2.msg || 'Server menolak permintaan');
       return parsed2;
     } catch(e2) {
-      throw new Error('Gagal terhubung ke server: ' + (e2.message || e.message));
+      const errMsg = e2.message.includes('Failed to fetch') || e.message.includes('Failed to fetch')
+        ? 'Tidak dapat terhubung ke server. Pastikan koneksi internet aktif dan coba lagi.'
+        : (e2.message || e.message);
+      throw new Error(errMsg);
     }
   }
 }
@@ -2044,7 +2062,7 @@ async function doUpload() {
   let   totalSize  = 0;
 
   // Helper: fetch dengan timeout agar tidak stuck selamanya
-  async function fetchWithTimeout(url, options, timeoutMs = 90000) {
+  async function fetchWithTimeout(url, options, timeoutMs = 120000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -2053,12 +2071,14 @@ async function doUpload() {
       return res;
     } catch (err) {
       clearTimeout(timer);
-      if (err.name === 'AbortError') throw new Error('Timeout — server tidak merespons dalam 90 detik');
+      if (err.name === 'AbortError') throw new Error('Timeout — server tidak merespons dalam 2 menit. Coba lagi atau periksa koneksi internet.');
+      if (err.message === 'Failed to fetch') throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet dan coba lagi.');
       throw err;
     }
   }
 
-  // Helper: satu upload file ke Drive via GET ?data= (menghindari POST redirect issue)
+  // Helper: satu upload file ke Drive
+  // Strategi: POST dulu (payload besar lebih aman), jika gagal fallback GET
   async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulan, uploadedBy) {
     const bodyObj = JSON.stringify({
       action: 'uploadOnly',
@@ -2066,28 +2086,39 @@ async function doUpload() {
       subFolder, bulan, uploadedBy,
     });
 
-    // Coba POST dulu (lebih stabil untuk payload besar)
-    let text = '';
+    // Percobaan 1: POST dengan redirect follow
     try {
       const res = await fetchWithTimeout(API_URL, {
-        method: 'POST', body: bodyObj, redirect: 'follow'
-      });
-      text = await res.text();
-      const r = JSON.parse(text);
+        method: 'POST',
+        body: bodyObj,
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain' },
+      }, 120000);
+      const text = await res.text();
+      // Cari JSON valid di dalam respons (kadang Apps Script menambah prefix)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Respons tidak valid dari server');
+      const r = JSON.parse(jsonMatch[0]);
       if (r && r.ok) return r;
-      // Jika server balas ok:false, langsung throw
       throw new Error(r.msg || 'Server menolak');
     } catch (postErr) {
-      // Fallback: GET via ?data= (Apps Script selalu terima GET)
+      // Percobaan 2: GET via ?data= (Apps Script selalu terima GET)
       try {
         const url2 = API_URL + '?data=' + encodeURIComponent(bodyObj);
-        const res2 = await fetchWithTimeout(url2, { method: 'GET', redirect: 'follow' });
+        const res2 = await fetchWithTimeout(url2, { method: 'GET', redirect: 'follow' }, 120000);
         const text2 = await res2.text();
-        const r2 = JSON.parse(text2);
-        if (!r2 || !r2.ok) throw new Error(r2 ? r2.msg : 'Gagal upload');
+        const jsonMatch2 = text2.match(/\{[\s\S]*\}/);
+        if (!jsonMatch2) throw new Error('Respons tidak valid dari server');
+        const r2 = JSON.parse(jsonMatch2[0]);
+        if (!r2 || !r2.ok) throw new Error(r2 ? r2.msg : 'Gagal upload ke Drive');
         return r2;
       } catch (getErr) {
-        throw new Error(getErr.message || postErr.message);
+        // Percobaan 3: no-cors POST sebagai last resort (tidak bisa baca response, tapi bisa kirim)
+        // Jika sampai di sini, lempar error yang informatif
+        const errMsg = getErr.message.includes('Failed to fetch')
+          ? 'Tidak dapat terhubung ke server. Pastikan koneksi internet aktif dan coba lagi.'
+          : (getErr.message || postErr.message);
+        throw new Error(errMsg);
       }
     }
   }
