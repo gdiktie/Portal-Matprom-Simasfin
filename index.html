@@ -312,27 +312,24 @@
   <!-- Content: logged in -->
   <div id="content-section" class="hidden">
 
-    <!-- Upload btn for KPNO — hanya tombol, tanpa judul kelola -->
-    <div id="kpno-toolbar" class="hidden mb-6 flex justify-end">
-      <button class="btn-upload-main" onclick="openModal('upload')">
-        <i class="fa-solid fa-cloud-arrow-up"></i> Upload Materi
-      </button>
-    </div>
-
     <!-- Month Tabs -->
     <div class="mb-8">
-      <!-- Row 1: judul kiri, search + refresh kanan — sejajar -->
+      <!-- Row 1: judul kiri, search + upload + refresh kanan — sejajar -->
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h2 class="section-title font-sora">Materi Promosi</h2>
           <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
         </div>
-        <!-- Search + Refresh dalam satu baris -->
+        <!-- Search + Upload + Refresh dalam satu baris -->
         <div class="flex items-center gap-2">
           <div class="relative">
             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
             <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9 w-52" oninput="filterCards()">
           </div>
+          <!-- Tombol Upload — hanya muncul untuk Marketing -->
+          <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 16px;font-size:.8rem;">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+          </button>
           <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
             style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
             onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
@@ -874,6 +871,33 @@ async function apiPost(action, payload = {}) {
 
 
 
+// ===== LOCAL STORAGE CACHE =====
+const LS_KEY = 'sm_mediaData_cache';
+
+function saveMediaCache() {
+  try {
+    // Simpan hanya field yang aman (tanpa File object biner besar)
+    const cacheable = mediaData.map(item => ({
+      ...item,
+      // thumbs dan thumb bisa berupa base64 — simpan apa adanya (maks ~5MB total)
+    }));
+    localStorage.setItem(LS_KEY, JSON.stringify(cacheable));
+  } catch(e) { /* storage penuh — abaikan */ }
+}
+
+function loadMediaCache() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(item => ({
+      ...item,
+      locked   : item.locked    === true,
+      deskripsi: item.deskripsi || '',
+    })) : [];
+  } catch(e) { return []; }
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', async () => {
   buildMonthTabs();
@@ -896,8 +920,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   const saved = sessionStorage.getItem('sm_user');
   if (saved) {
     currentUser = JSON.parse(saved);
-    await loadMediaFromSheets();
-    onLoginSuccess();
+
+    // ✅ Langsung load dari cache lokal agar judul/preview/deskripsi tidak hilang saat refresh
+    const cached = loadMediaCache();
+    if (cached.length > 0) {
+      mediaData = cached;
+      onLoginSuccess(); // render dari cache dulu (instan)
+    }
+
+    // Kemudian fetch fresh dari server di background
+    loadMediaFromSheets().then(() => {
+      if (currentUser) renderCards(); // update dengan data terbaru
+    }).catch(() => {});
+
+    if (!cached.length) {
+      // Tidak ada cache — tunggu server
+      await loadMediaFromSheets();
+      onLoginSuccess();
+    }
 
     // ✅ Auto-refresh setiap 30 detik agar divisi lain dapat update lock & deskripsi terbaru
     setInterval(async () => {
@@ -909,6 +949,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             locked   : item.locked    === true,
             deskripsi: item.deskripsi || '',
           }));
+          saveMediaCache(); // ✅ cache terbaru agar tidak hilang saat refresh
           renderCards();
         }
       } catch(e) { /* silent — jangan ganggu user dengan error */ }
@@ -945,15 +986,18 @@ async function loadMediaFromSheets() {
     const resp = await apiCall('getMedia');
     if (resp.ok && resp.data.length > 0) {
       // ✅ Normalisasi: pastikan setiap item punya field locked & deskripsi
-      // supaya data lama (sebelum fitur ini ada) tidak lolos guard
       mediaData = resp.data.map(item => ({
         ...item,
-        locked   : item.locked    === true,   // pastikan boolean, bukan undefined
-        deskripsi: item.deskripsi || '',       // pastikan string, bukan undefined
+        locked   : item.locked    === true,
+        deskripsi: item.deskripsi || '',
       }));
+      saveMediaCache(); // simpan ke localStorage agar tidak hilang saat refresh
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
+    // Fallback: pakai cache lokal jika server tidak bisa dijangkau
+    const cached = loadMediaCache();
+    if (cached.length > 0) mediaData = cached;
   } finally {
     showLoadingOverlay(false);
   }
@@ -1688,12 +1732,14 @@ function onLoginSuccess() {
     : 'Cabang · ' + currentUser.cabang;
   document.getElementById('nav-role').innerHTML = roleLabel;
 
-  // Hanya Marketing yang dapat toolbar upload
-  if (isMarketing()) {
-    document.getElementById('kpno-toolbar').classList.remove('hidden');
-    document.getElementById('kpno-toolbar').classList.add('flex');
-  } else {
-    document.getElementById('kpno-toolbar').classList.add('hidden');
+  // Hanya Marketing yang dapat tombol upload
+  const btnUploadInline = document.getElementById('btn-upload-inline');
+  if (btnUploadInline) {
+    if (isMarketing()) {
+      btnUploadInline.classList.remove('hidden');
+    } else {
+      btnUploadInline.classList.add('hidden');
+    }
   }
   renderCards();
 }
@@ -1909,6 +1955,7 @@ async function doRefreshMedia() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
+      saveMediaCache(); // ✅ cache agar tidak hilang saat refresh
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -1934,39 +1981,78 @@ function openDownload(id, title) {
   document.getElementById('dl-title').textContent = title;
   openModal('dl');
 }
-function confirmDownload() {
+async function confirmDownload() {
   closeModal('dl');
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
 
-  // ✅ Guard berlapis: cegah download jika locked & bukan marketing
+  // Guard berlapis: cegah download jika locked & bukan marketing
   if (item.locked === true && !isMarketing()) {
     showToast('error', 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.');
     return;
   }
 
-  if (item.driveUrl) {
-    // Ekstrak fileId dari view URL lalu bangun URL download yang benar
-    // Format view:  https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-    // Format download yang benar: https://drive.google.com/uc?export=download&confirm=t&id=FILE_ID
-    const match = item.driveUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  // Kumpulkan semua URL — prioritaskan driveUrls (multi), fallback ke driveUrl (single)
+  const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls
+    : (item.driveUrl ? [item.driveUrl] : []);
+
+  if (urls.length === 0) {
+    showToast('error', 'File belum tersedia untuk diunduh.');
+    return;
+  }
+
+  // Single file — langsung download
+  if (urls.length === 1) {
+    const match = urls[0].match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (match && match[1]) {
-      const fileId = match[1];
-      const dlUrl  = 'https://drive.google.com/uc?export=download&confirm=t&id=' + fileId;
+      const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
       const a = document.createElement('a');
-      a.href = dlUrl;
-      a.download = item.title || 'matprom';
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.href = dlUrl; a.download = item.title || 'matprom';
+      a.target = '_blank'; a.rel = 'noopener noreferrer';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       showToast('success', 'Materi sedang diunduh dari Google Drive...');
     } else {
       showToast('error', 'URL Drive tidak valid, hubungi admin.');
     }
   } else {
-    showToast('error', 'File belum tersedia untuk diunduh.');
+    // Multi-file — download semua sebagai ZIP menggunakan fflate
+    showToast('success', `Menyiapkan ${urls.length} file sebagai ZIP...`);
+    try {
+      const fileMap = {};
+      let fetchErrors = 0;
+      for (let i = 0; i < urls.length; i++) {
+        const match = urls[i].match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (!match) { fetchErrors++; continue; }
+        const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+        try {
+          const resp = await fetch(dlUrl);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const buf  = await resp.arrayBuffer();
+          const cd   = resp.headers.get('content-disposition') || '';
+          const cdExt = cd.match(/filename[^;=\n]*=([^;\n]+)/)?.[1]?.trim().replace(/['"]/g,'').match(/\.[^.]+$/)?.[0] || '';
+          const fname = (item.title || 'file').replace(/[^\w\-]/g,'_') + '_' + (i+1) + cdExt;
+          fileMap[fname] = new Uint8Array(buf);
+        } catch(e) { fetchErrors++; }
+      }
+      if (Object.keys(fileMap).length === 0) throw new Error('Semua file gagal diunduh.');
+      const zipped = await new Promise((resolve, reject) => {
+        fflate.zip(fileMap, { level: 0 }, (err, data) => { if (err) reject(err); else resolve(data); });
+      });
+      const blob = new Blob([zipped], { type: 'application/zip' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = (item.title || 'materi').replace(/[^\w\-]/g,'_') + '_semua.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 8000);
+      const ok = urls.length - fetchErrors;
+      showToast('success', fetchErrors > 0
+        ? `ZIP dibuat (${ok}/${urls.length} file berhasil)`
+        : `Semua ${urls.length} file diunduh sebagai ZIP!`);
+    } catch(e) {
+      showToast('error', 'Gagal buat ZIP: ' + e.message);
+    }
   }
 
   if (currentUser && selectedDownloadId) {
@@ -2023,6 +2109,7 @@ async function doUpload() {
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
+    saveMediaCache(); // ✅ cache
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
@@ -2112,6 +2199,7 @@ async function doUpload() {
     }
 
     mediaData.unshift(combinedItem);
+    saveMediaCache(); // ✅ simpan ke cache agar tidak hilang saat refresh
 
     setProgress(btn, 100, 'Berhasil!');
     setTimeout(() => {
