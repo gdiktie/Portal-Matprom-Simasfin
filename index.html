@@ -832,62 +832,32 @@ let loginTabMode = "kpno";
 let registerTabMode = "kpno";
 
 // ===== API HELPER =====
-// Menggunakan GET + query param karena browser memblokir POST
-// ke Apps Script akibat redirect CORS. doGet di Apps Script
-// membaca ?data= dan me-route ke handler yang sama.
-// GET — untuk action ringan tanpa payload besar (login, register, getMedia)
+// Semua request ke Apps Script menggunakan GET + query param ?data=
+// Alasan: POST ke Apps Script diblokir browser karena redirect cross-origin (CORS error).
+// doGet di Apps Script membaca ?data= dan me-route ke handler yang sama persis dengan doPost.
+
+function extractJson(text) {
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : JSON.parse(text);
+  } catch(e) { return null; }
+}
+
+// apiCall: GET biasa — cocok untuk semua action (login, register, getMedia, addMedia, dll)
 async function apiCall(action, payload = {}) {
   const body = JSON.stringify({ action, ...payload });
   const url  = API_URL + '?data=' + encodeURIComponent(body);
   const res  = await fetch(url, { method: 'GET', redirect: 'follow' });
   const text = await res.text();
-  try {
-    // Cari JSON valid (Apps Script kadang menambah prefix HTML)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    return JSON.parse(text);
-  }
-  catch(e) { throw new Error('Respons server tidak valid'); }
+  const parsed = extractJson(text);
+  if (!parsed) throw new Error('Respons server tidak valid');
+  return parsed;
 }
 
-// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia)
-// Jika POST gagal (misal CORS redirect), fallback ke GET dengan data yang sama
+// apiPost: alias ke apiCall — dulu pakai POST tapi sekarang GET agar tidak kena CORS
+// Semua caller yang pakai apiPost tetap berfungsi tanpa perlu diubah
 async function apiPost(action, payload = {}) {
-  const body = JSON.stringify({ action, ...payload });
-  const extractJson = (text) => {
-    try {
-      const m = text.match(/\{[\s\S]*\}/);
-      return m ? JSON.parse(m[0]) : JSON.parse(text);
-    } catch(e) { return null; }
-  };
-  try {
-    const res = await fetch(API_URL, {
-      method: 'POST', body,
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain' },
-    });
-    const text = await res.text();
-    const parsed = extractJson(text);
-    if (!parsed) throw new Error('Respons server tidak valid');
-    if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak permintaan');
-    return parsed;
-  } catch(e) {
-    // Fallback: coba via GET jika POST gagal (CORS/redirect issue)
-    try {
-      const url = API_URL + '?data=' + encodeURIComponent(body);
-      const res2 = await fetch(url, { method: 'GET', redirect: 'follow' });
-      const text2 = await res2.text();
-      const parsed2 = extractJson(text2);
-      if (!parsed2) throw new Error('Respons server tidak valid');
-      if (parsed2 && parsed2.ok === false) throw new Error(parsed2.msg || 'Server menolak permintaan');
-      return parsed2;
-    } catch(e2) {
-      const errMsg = e2.message.includes('Failed to fetch') || e.message.includes('Failed to fetch')
-        ? 'Tidak dapat terhubung ke server. Pastikan koneksi internet aktif dan coba lagi.'
-        : (e2.message || e.message);
-      throw new Error(errMsg);
-    }
-  }
+  return apiCall(action, payload);
 }
 
 
@@ -2077,49 +2047,75 @@ async function doUpload() {
     }
   }
 
-  // Helper: satu upload file ke Drive
-  // Strategi: POST dulu (payload besar lebih aman), jika gagal fallback GET
-  async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulan, uploadedBy) {
-    const bodyObj = JSON.stringify({
+  // Ekstrak JSON dari respons Apps Script (kadang ada HTML prefix)
+  function parseResponse(text) {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Respons tidak valid dari server');
+    return JSON.parse(m[0]);
+  }
+
+  // Upload via GET dengan chunking otomatis jika URL terlalu panjang
+  // Apps Script doGet selalu reliable tanpa CORS issue
+  async function uploadViaGet(payloadObj, timeoutMs) {
+    const encoded = encodeURIComponent(JSON.stringify(payloadObj));
+    const fullUrl = API_URL + '?data=' + encoded;
+    const MAX_URL = 7500;
+
+    if (fullUrl.length <= MAX_URL) {
+      // Payload cukup kecil — kirim langsung via GET
+      const res = await fetchWithTimeout(fullUrl, { method: 'GET', redirect: 'follow' }, timeoutMs);
+      const text = await res.text();
+      return parseResponse(text);
+    }
+
+    // Payload terlalu besar — pakai chunk upload
+    // Apps Script menyimpan tiap chunk di PropertiesService, lalu gabung di chunk terakhir
+    const uploadId = Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const base64   = payloadObj.base64Data;
+    const CHUNK    = 100000; // ~100KB per chunk (aman untuk URL)
+    const total    = Math.ceil(base64.length / CHUNK);
+
+    for (let ci = 0; ci < total; ci++) {
+      const chunk = base64.slice(ci * CHUNK, (ci + 1) * CHUNK);
+      const chunkPayload = {
+        action    : 'uploadChunk',
+        uploadId,
+        index     : ci,
+        total,
+        chunk,
+        fileName  : payloadObj.fileName,
+        mimeType  : payloadObj.mimeType,
+        subFolder : payloadObj.subFolder,
+        bulan     : payloadObj.bulan,
+        uploadedBy: payloadObj.uploadedBy,
+      };
+      const chunkUrl = API_URL + '?data=' + encodeURIComponent(JSON.stringify(chunkPayload));
+      const res  = await fetchWithTimeout(chunkUrl, { method: 'GET', redirect: 'follow' }, timeoutMs);
+      const text = await res.text();
+      const r    = parseResponse(text);
+      if (!r.ok) throw new Error(r.msg || 'Gagal upload chunk ' + ci);
+      if (r.done) return r; // chunk terakhir sudah selesai, server balas dengan url
+      setProgress(btn, 15 + Math.round(((ci + 1) / total) * 70), `Mengirim bagian ${ci + 1}/${total}...`);
+    }
+    throw new Error('Upload selesai tapi tidak ada respons akhir dari server');
+  }
+
+  // Upload satu file ke Drive — selalu pakai GET (tidak ada CORS issue seperti POST)
+  async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulanVal, uploadedBy) {
+    const payloadObj = {
       action: 'uploadOnly',
       base64Data, fileName, mimeType,
-      subFolder, bulan, uploadedBy,
-    });
-
-    // Percobaan 1: POST dengan redirect follow
+      subFolder, bulan: bulanVal, uploadedBy,
+    };
     try {
-      const res = await fetchWithTimeout(API_URL, {
-        method: 'POST',
-        body: bodyObj,
-        redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain' },
-      }, 120000);
-      const text = await res.text();
-      // Cari JSON valid di dalam respons (kadang Apps Script menambah prefix)
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('Respons tidak valid dari server');
-      const r = JSON.parse(jsonMatch[0]);
+      const r = await uploadViaGet(payloadObj, 120000);
       if (r && r.ok) return r;
-      throw new Error(r.msg || 'Server menolak');
-    } catch (postErr) {
-      // Percobaan 2: GET via ?data= (Apps Script selalu terima GET)
-      try {
-        const url2 = API_URL + '?data=' + encodeURIComponent(bodyObj);
-        const res2 = await fetchWithTimeout(url2, { method: 'GET', redirect: 'follow' }, 120000);
-        const text2 = await res2.text();
-        const jsonMatch2 = text2.match(/\{[\s\S]*\}/);
-        if (!jsonMatch2) throw new Error('Respons tidak valid dari server');
-        const r2 = JSON.parse(jsonMatch2[0]);
-        if (!r2 || !r2.ok) throw new Error(r2 ? r2.msg : 'Gagal upload ke Drive');
-        return r2;
-      } catch (getErr) {
-        // Percobaan 3: no-cors POST sebagai last resort (tidak bisa baca response, tapi bisa kirim)
-        // Jika sampai di sini, lempar error yang informatif
-        const errMsg = getErr.message.includes('Failed to fetch')
-          ? 'Tidak dapat terhubung ke server. Pastikan koneksi internet aktif dan coba lagi.'
-          : (getErr.message || postErr.message);
-        throw new Error(errMsg);
+      throw new Error(r ? (r.msg || 'Server menolak') : 'Respons kosong');
+    } catch (err) {
+      if (err.message === 'Failed to fetch' || err.message.includes('Failed to fetch')) {
+        throw new Error('Koneksi ke server gagal. Pastikan internet aktif, lalu coba lagi.');
       }
+      throw err;
     }
   }
 
