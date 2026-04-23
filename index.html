@@ -320,14 +320,13 @@
           <h2 class="section-title font-sora">Materi Promosi</h2>
           <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
         </div>
-        <!-- Search + Upload + Refresh dalam satu baris -->
+        <!-- Search + Upload (marketing only) + Refresh dalam satu baris -->
         <div class="flex items-center gap-2">
           <div class="relative">
             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
             <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9 w-52" oninput="filterCards()">
           </div>
-          <!-- Tombol Upload — hanya muncul untuk Marketing -->
-          <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 16px;font-size:.8rem;">
+          <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 16px;font-size:.8rem;white-space:nowrap;">
             <i class="fa-solid fa-cloud-arrow-up"></i> Upload
           </button>
           <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
@@ -871,31 +870,46 @@ async function apiPost(action, payload = {}) {
 
 
 
-// ===== LOCAL STORAGE CACHE =====
-const LS_KEY = 'sm_mediaData_cache';
+// ===== THUMB + DESKRIPSI CACHE (sessionStorage) =====
+// Google Sheets tidak menyimpan base64 thumb karena terlalu besar.
+// Kita simpan thumb & deskripsi per-item di sessionStorage, lalu merge setiap kali data server datang.
+const THUMB_CACHE_KEY = 'sm_thumb_cache';
 
-function saveMediaCache() {
+function saveThumbCache() {
   try {
-    // Simpan hanya field yang aman (tanpa File object biner besar)
-    const cacheable = mediaData.map(item => ({
-      ...item,
-      // thumbs dan thumb bisa berupa base64 — simpan apa adanya (maks ~5MB total)
-    }));
-    localStorage.setItem(LS_KEY, JSON.stringify(cacheable));
+    const cache = {};
+    mediaData.forEach(item => {
+      cache[item.id] = {
+        thumb     : item.thumb     || null,
+        thumbs    : item.thumbs    || [],
+        deskripsi : item.deskripsi || '',
+        driveUrls : item.driveUrls || [],
+        driveUrl  : item.driveUrl  || null,
+      };
+    });
+    sessionStorage.setItem(THUMB_CACHE_KEY, JSON.stringify(cache));
   } catch(e) { /* storage penuh — abaikan */ }
 }
 
-function loadMediaCache() {
+function mergeThumbCache(items) {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(item => ({
-      ...item,
-      locked   : item.locked    === true,
-      deskripsi: item.deskripsi || '',
-    })) : [];
-  } catch(e) { return []; }
+    const raw = sessionStorage.getItem(THUMB_CACHE_KEY);
+    if (!raw) return items;
+    const cache = JSON.parse(raw);
+    return items.map(item => {
+      const c = cache[item.id];
+      if (!c) return item;
+      return {
+        ...item,
+        // Pakai dari cache jika server tidak punya (server tidak simpan base64)
+        thumb    : item.thumb     || c.thumb     || null,
+        thumbs   : (item.thumbs   && item.thumbs.length > 0)   ? item.thumbs   : (c.thumbs   || []),
+        deskripsi: item.deskripsi || c.deskripsi || '',
+        driveUrl : item.driveUrl  || c.driveUrl  || null,
+        driveUrls: (item.driveUrls && item.driveUrls.length > 0) ? item.driveUrls : (c.driveUrls || []),
+      };
+    });
+  } catch(e) { return items; }
 }
 
 // ===== INIT =====
@@ -920,36 +934,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   const saved = sessionStorage.getItem('sm_user');
   if (saved) {
     currentUser = JSON.parse(saved);
-
-    // ✅ Langsung load dari cache lokal agar judul/preview/deskripsi tidak hilang saat refresh
-    const cached = loadMediaCache();
-    if (cached.length > 0) {
-      mediaData = cached;
-      onLoginSuccess(); // render dari cache dulu (instan)
-    }
-
-    // Kemudian fetch fresh dari server di background
-    loadMediaFromSheets().then(() => {
-      if (currentUser) renderCards(); // update dengan data terbaru
-    }).catch(() => {});
-
-    if (!cached.length) {
-      // Tidak ada cache — tunggu server
-      await loadMediaFromSheets();
-      onLoginSuccess();
-    }
+    await loadMediaFromSheets();
+    saveThumbCache(); // ✅ simpan thumb/deskripsi/driveUrls ke sessionStorage setelah load
+    onLoginSuccess();
 
     // ✅ Auto-refresh setiap 30 detik agar divisi lain dapat update lock & deskripsi terbaru
     setInterval(async () => {
       try {
         const resp = await apiCall('getMedia');
         if (resp.ok && Array.isArray(resp.data)) {
-          mediaData = resp.data.map(item => ({
+          const normalized = resp.data.map(item => ({
             ...item,
             locked   : item.locked    === true,
             deskripsi: item.deskripsi || '',
           }));
-          saveMediaCache(); // ✅ cache terbaru agar tidak hilang saat refresh
+          mediaData = mergeThumbCache(normalized); // ✅ merge thumb dari cache
           renderCards();
         }
       } catch(e) { /* silent — jangan ganggu user dengan error */ }
@@ -985,19 +984,16 @@ async function loadMediaFromSheets() {
     showLoadingOverlay(true);
     const resp = await apiCall('getMedia');
     if (resp.ok && resp.data.length > 0) {
-      // ✅ Normalisasi: pastikan setiap item punya field locked & deskripsi
-      mediaData = resp.data.map(item => ({
+      const normalized = resp.data.map(item => ({
         ...item,
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      saveMediaCache(); // simpan ke localStorage agar tidak hilang saat refresh
+      // ✅ KRITIS: merge thumb/deskripsi dari sessionStorage karena server tidak simpan base64
+      mediaData = mergeThumbCache(normalized);
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
-    // Fallback: pakai cache lokal jika server tidak bisa dijangkau
-    const cached = loadMediaCache();
-    if (cached.length > 0) mediaData = cached;
   } finally {
     showLoadingOverlay(false);
   }
@@ -1497,73 +1493,32 @@ async function triggerPreviewDownload() {
     ? item.driveUrls
     : (item.driveUrl ? [item.driveUrl] : []);
 
-  // Single file — gunakan modal unduh biasa
-  if (urls.length <= 1) {
-    closePreviewBtn();
-    openDownload(item.id, item.title);
+  if (urls.length === 0) {
+    showToast('error', 'File belum tersedia untuk diunduh.');
     return;
   }
 
-  // Multi-file — unduh semua sekaligus sebagai ZIP (fflate)
-  const dlBtn = document.getElementById('preview-dl-btn');
-  dlBtn.disabled = true;
-  dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyiapkan ZIP...';
+  // ✅ Download semua file — buka tiap URL di tab baru dengan jeda agar browser tidak blokir
+  closePreviewBtn();
+  urls.forEach((url, i) => {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match || !match[1]) return;
+    const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }, i * 800);
+  });
 
-  try {
-    const fileMap = {};
-    let fetchErrors = 0;
-
-    for (let i = 0; i < urls.length; i++) {
-      dlBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Unduh ${i+1}/${urls.length}...`;
-      const url = urls[i];
-      // Ekstrak file ID dari Drive URL
-      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      if (!match) { fetchErrors++; continue; }
-      const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-      try {
-        const resp = await fetch(dlUrl);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const buf  = await resp.arrayBuffer();
-        // Coba deteksi ekstensi dari content-disposition atau URL
-        const cd   = resp.headers.get('content-disposition') || '';
-        const cdExt = cd.match(/filename[^;=\n]*=([^;\n]+)/)?.[1]?.trim().replace(/['"]/g,'').match(/\.[^.]+$/)?.[0] || '';
-        const fname = (item.title || 'file').replace(/[^\w\-]/g,'_') + '_' + (i+1) + cdExt;
-        fileMap[fname] = new Uint8Array(buf);
-      } catch(e) { fetchErrors++; }
-    }
-
-    if (Object.keys(fileMap).length === 0) {
-      throw new Error('Semua file gagal diunduh. Periksa koneksi atau coba lagi.');
-    }
-
-    dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Membuat ZIP...';
-
-    // Zip dengan fflate (level 0 = store only, cepat)
-    const zipped = await new Promise((resolve, reject) => {
-      fflate.zip(fileMap, { level: 0 }, (err, data) => {
-        if (err) reject(err); else resolve(data);
-      });
-    });
-
-    const blob   = new Blob([zipped], { type: 'application/zip' });
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = (item.title || 'materi').replace(/[^\w\-]/g,'_') + '_semua.zip';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 8000);
-
-    const ok = urls.length - fetchErrors;
-    showToast('success', fetchErrors > 0
-      ? `ZIP dibuat (${ok}/${urls.length} file berhasil)`
-      : `Semua ${urls.length} file diunduh sebagai ZIP!`);
-
-  } catch(e) {
-    showToast('error', 'Gagal buat ZIP: ' + e.message);
-  } finally {
-    dlBtn.disabled = false;
-    dlBtn.innerHTML = '<i class="fa-solid fa-download"></i> Unduh Semua (ZIP)';
-  }
+  const totalValid = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
+  showToast('success', totalValid > 1
+    ? `Mengunduh ${totalValid} file... (masing-masing akan terbuka)`
+    : 'Materi sedang diunduh dari Google Drive...');
 }
 
 // ===== MODAL =====
@@ -1732,14 +1687,11 @@ function onLoginSuccess() {
     : 'Cabang · ' + currentUser.cabang;
   document.getElementById('nav-role').innerHTML = roleLabel;
 
-  // Hanya Marketing yang dapat tombol upload
+  // Hanya Marketing yang dapat tombol upload (tampil inline di sebelah search)
   const btnUploadInline = document.getElementById('btn-upload-inline');
   if (btnUploadInline) {
-    if (isMarketing()) {
-      btnUploadInline.classList.remove('hidden');
-    } else {
-      btnUploadInline.classList.add('hidden');
-    }
+    if (isMarketing()) btnUploadInline.classList.remove('hidden');
+    else btnUploadInline.classList.add('hidden');
   }
   renderCards();
 }
@@ -1955,7 +1907,8 @@ async function doRefreshMedia() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      saveMediaCache(); // ✅ cache agar tidak hilang saat refresh
+      mediaData = mergeThumbCache(mediaData); // ✅ merge thumb dari cache
+      saveThumbCache();
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -1981,18 +1934,18 @@ function openDownload(id, title) {
   document.getElementById('dl-title').textContent = title;
   openModal('dl');
 }
-async function confirmDownload() {
+function confirmDownload() {
   closeModal('dl');
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
 
-  // Guard berlapis: cegah download jika locked & bukan marketing
+  // Guard: cegah download jika locked & bukan marketing
   if (item.locked === true && !isMarketing()) {
     showToast('error', 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.');
     return;
   }
 
-  // Kumpulkan semua URL — prioritaskan driveUrls (multi), fallback ke driveUrl (single)
+  // ✅ Kumpulkan SEMUA URL — driveUrls (multi) diprioritaskan, fallback ke driveUrl (single)
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls
     : (item.driveUrl ? [item.driveUrl] : []);
@@ -2002,57 +1955,30 @@ async function confirmDownload() {
     return;
   }
 
-  // Single file — langsung download
-  if (urls.length === 1) {
-    const match = urls[0].match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (match && match[1]) {
-      const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+  // ✅ Download SEMUA file — buka setiap URL di tab baru dengan jeda 800ms
+  // (fetch langsung ke Drive diblokir CORS, jadi buka tab = cara yang bisa bekerja)
+  let count = 0;
+  urls.forEach((url, i) => {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match || !match[1]) return;
+    const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+    setTimeout(() => {
       const a = document.createElement('a');
-      a.href = dlUrl; a.download = item.title || 'matprom';
-      a.target = '_blank'; a.rel = 'noopener noreferrer';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      showToast('success', 'Materi sedang diunduh dari Google Drive...');
-    } else {
-      showToast('error', 'URL Drive tidak valid, hubungi admin.');
-    }
+      a.href = dlUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      count++;
+    }, i * 800); // jeda antar file agar browser tidak blokir popup
+  });
+
+  const totalValid = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
+  if (totalValid > 1) {
+    showToast('success', `Mengunduh ${totalValid} file... (masing-masing akan terbuka)`);
   } else {
-    // Multi-file — download semua sebagai ZIP menggunakan fflate
-    showToast('success', `Menyiapkan ${urls.length} file sebagai ZIP...`);
-    try {
-      const fileMap = {};
-      let fetchErrors = 0;
-      for (let i = 0; i < urls.length; i++) {
-        const match = urls[i].match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (!match) { fetchErrors++; continue; }
-        const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-        try {
-          const resp = await fetch(dlUrl);
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          const buf  = await resp.arrayBuffer();
-          const cd   = resp.headers.get('content-disposition') || '';
-          const cdExt = cd.match(/filename[^;=\n]*=([^;\n]+)/)?.[1]?.trim().replace(/['"]/g,'').match(/\.[^.]+$/)?.[0] || '';
-          const fname = (item.title || 'file').replace(/[^\w\-]/g,'_') + '_' + (i+1) + cdExt;
-          fileMap[fname] = new Uint8Array(buf);
-        } catch(e) { fetchErrors++; }
-      }
-      if (Object.keys(fileMap).length === 0) throw new Error('Semua file gagal diunduh.');
-      const zipped = await new Promise((resolve, reject) => {
-        fflate.zip(fileMap, { level: 0 }, (err, data) => { if (err) reject(err); else resolve(data); });
-      });
-      const blob = new Blob([zipped], { type: 'application/zip' });
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = (item.title || 'materi').replace(/[^\w\-]/g,'_') + '_semua.zip';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 8000);
-      const ok = urls.length - fetchErrors;
-      showToast('success', fetchErrors > 0
-        ? `ZIP dibuat (${ok}/${urls.length} file berhasil)`
-        : `Semua ${urls.length} file diunduh sebagai ZIP!`);
-    } catch(e) {
-      showToast('error', 'Gagal buat ZIP: ' + e.message);
-    }
+    showToast('success', 'Materi sedang diunduh dari Google Drive...');
   }
 
   if (currentUser && selectedDownloadId) {
@@ -2109,7 +2035,7 @@ async function doUpload() {
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
-    saveMediaCache(); // ✅ cache
+    saveThumbCache(); // ✅ simpan thumb/deskripsi ke cache
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
@@ -2199,7 +2125,7 @@ async function doUpload() {
     }
 
     mediaData.unshift(combinedItem);
-    saveMediaCache(); // ✅ simpan ke cache agar tidak hilang saat refresh
+    saveThumbCache(); // ✅ simpan thumb/deskripsi/driveUrls ke cache agar tidak hilang saat refresh
 
     setProgress(btn, 100, 'Berhasil!');
     setTimeout(() => {
