@@ -2031,93 +2031,149 @@ async function doUpload() {
   const thumbs     = [];
   let   totalSize  = 0;
 
-  // Helper: fetch dengan timeout agar tidak stuck selamanya
-  async function fetchWithTimeout(url, options, timeoutMs = 120000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timer);
-      return res;
-    } catch (err) {
-      clearTimeout(timer);
-      if (err.name === 'AbortError') throw new Error('Timeout — server tidak merespons dalam 2 menit. Coba lagi atau periksa koneksi internet.');
-      if (err.message === 'Failed to fetch') throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet dan coba lagi.');
-      throw err;
-    }
-  }
+  // ── UPLOAD ENGINE ──────────────────────────────────────────────────────────
+  // Masalah inti: Apps Script me-redirect POST dari script.google.com ke
+  // script.googleusercontent.com. Browser memblokir redirect cross-origin ini
+  // jika ada custom header (Content-Type, dll) → "Failed to fetch".
+  //
+  // Solusi: POST dengan body FormData atau URLSearchParams — ini TIDAK
+  // trigger CORS preflight karena dianggap "simple request" oleh browser.
+  // Apps Script doPost membaca e.postData.contents seperti biasa.
+  // ────────────────────────────────────────────────────────────────────────────
 
-  // Ekstrak JSON dari respons Apps Script (kadang ada HTML prefix)
   function parseResponse(text) {
+    // Apps Script kadang mengembalikan JSON di dalam HTML wrapper
     const m = text.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('Respons tidak valid dari server');
+    if (!m) throw new Error('Respons server tidak valid: ' + text.slice(0, 120));
     return JSON.parse(m[0]);
   }
 
-  // Upload via GET dengan chunking otomatis jika URL terlalu panjang
-  // Apps Script doGet selalu reliable tanpa CORS issue
-  async function uploadViaGet(payloadObj, timeoutMs) {
-    const encoded = encodeURIComponent(JSON.stringify(payloadObj));
-    const fullUrl = API_URL + '?data=' + encoded;
-    const MAX_URL = 7500;
+  // Kirim JSON ke Apps Script
+  // Apps Script selalu redirect POST ke URL baru → browser blokir jika ada custom header.
+  // Solusi: kirim via XMLHttpRequest (XHR) yang lebih permisif soal redirect,
+  // dengan fallback ke fetch GET untuk payload kecil.
+  function postToScript(jsonString, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        xhr.abort();
+        reject(new Error('Timeout — server tidak merespons dalam 3 menit.'));
+      }, timeoutMs);
 
-    if (fullUrl.length <= MAX_URL) {
-      // Payload cukup kecil — kirim langsung via GET
-      const res = await fetchWithTimeout(fullUrl, { method: 'GET', redirect: 'follow' }, timeoutMs);
-      const text = await res.text();
-      return parseResponse(text);
+      const xhr = new XMLHttpRequest();
+      // XHR mengikuti redirect secara otomatis tanpa CORS preflight untuk simple request
+      xhr.open('POST', API_URL, true);
+      // JANGAN set Content-Type — biarkan browser set sendiri (text/plain default)
+      // ini membuat request jadi "simple request" → tidak ada CORS preflight
+      xhr.withCredentials = false;
+
+      xhr.onload = function() {
+        clearTimeout(timer);
+        try {
+          resolve(parseResponse(xhr.responseText));
+        } catch(e) {
+          // Jika XHR berhasil tapi response tidak valid, coba GET sebagai fallback
+          // (hanya untuk payload kecil tanpa base64)
+          if (!jsonString.includes('"base64Data"') && !jsonString.includes('"chunk"')) {
+            const url = API_URL + '?data=' + encodeURIComponent(jsonString);
+            fetch(url, { method: 'GET', redirect: 'follow' })
+              .then(r => r.text())
+              .then(t => { try { resolve(parseResponse(t)); } catch(e2) { reject(e2); } })
+              .catch(reject);
+          } else {
+            reject(e);
+          }
+        }
+      };
+
+      xhr.onerror = function() {
+        clearTimeout(timer);
+        // Jika XHR gagal dan payload kecil (bukan file), fallback ke GET
+        if (!jsonString.includes('"base64Data"') && !jsonString.includes('"chunk"')) {
+          const url = API_URL + '?data=' + encodeURIComponent(jsonString);
+          fetch(url, { method: 'GET', redirect: 'follow' })
+            .then(r => r.text())
+            .then(t => { try { resolve(parseResponse(t)); } catch(e) { reject(e); } })
+            .catch(() => reject(new Error('Tidak dapat terhubung ke server Apps Script. Periksa URL API dan status deployment.')));
+        } else {
+          reject(new Error('Upload gagal — tidak dapat mengirim file ke server. Periksa deployment Apps Script.'));
+        }
+      };
+
+      xhr.send(jsonString);
+    });
+  }
+
+  // Upload satu file ke Drive menggunakan chunk POST
+  // Setiap chunk dikirim via POST FormData → tidak ada CORS issue
+  async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulanVal, uploadedBy) {
+    // Coba langsung (uploadOnly) jika file kecil — 1 request selesai
+    const directPayload = JSON.stringify({
+      action: 'uploadOnly', base64Data, fileName, mimeType,
+      subFolder, bulan: bulanVal, uploadedBy,
+    });
+
+    // Ukuran aman untuk 1 request POST: tidak ada batasan seperti URL
+    // Coba dulu direct upload
+    try {
+      const r = await postToScript(directPayload, 180000);
+      if (r && r.ok) return r;
+      if (r && r.msg) throw new Error(r.msg);
+    } catch (directErr) {
+      // Jika gagal bukan karena koneksi, langsung throw
+      if (!directErr.message.includes('timeout') &&
+          !directErr.message.includes('Timeout') &&
+          !directErr.message.includes('Failed to fetch') &&
+          !directErr.message.includes('fetch')) {
+        throw directErr;
+      }
+      // Koneksi ada tapi mungkin timeout karena file besar → coba chunking
     }
 
-    // Payload terlalu besar — pakai chunk upload
-    // Apps Script menyimpan tiap chunk di PropertiesService, lalu gabung di chunk terakhir
+    // Chunking: pecah base64 jadi potongan kecil, kirim satu-satu via POST XHR
     const uploadId = Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    const base64   = payloadObj.base64Data;
-    const CHUNK    = 100000; // ~100KB per chunk (aman untuk URL)
-    const total    = Math.ceil(base64.length / CHUNK);
+    const CHUNK    = 200000; // 200KB base64 per chunk
+    const total    = Math.ceil(base64Data.length / CHUNK);
 
     for (let ci = 0; ci < total; ci++) {
-      const chunk = base64.slice(ci * CHUNK, (ci + 1) * CHUNK);
-      const chunkPayload = {
-        action    : 'uploadChunk',
-        uploadId,
-        index     : ci,
-        total,
-        chunk,
-        fileName  : payloadObj.fileName,
-        mimeType  : payloadObj.mimeType,
-        subFolder : payloadObj.subFolder,
-        bulan     : payloadObj.bulan,
-        uploadedBy: payloadObj.uploadedBy,
-      };
-      const chunkUrl = API_URL + '?data=' + encodeURIComponent(JSON.stringify(chunkPayload));
-      const res  = await fetchWithTimeout(chunkUrl, { method: 'GET', redirect: 'follow' }, timeoutMs);
-      const text = await res.text();
-      const r    = parseResponse(text);
-      if (!r.ok) throw new Error(r.msg || 'Gagal upload chunk ' + ci);
-      if (r.done) return r; // chunk terakhir sudah selesai, server balas dengan url
-      setProgress(btn, 15 + Math.round(((ci + 1) / total) * 70), `Mengirim bagian ${ci + 1}/${total}...`);
+      const chunk = base64Data.slice(ci * CHUNK, (ci + 1) * CHUNK);
+      const chunkPayload = JSON.stringify({
+        action: 'uploadChunk', uploadId,
+        index: ci, total, chunk,
+        fileName, mimeType, subFolder,
+        bulan: bulanVal, uploadedBy,
+      });
+      setProgress(btn, 15 + Math.round(((ci + 0.5) / total) * 72), `Mengirim bagian ${ci + 1}/${total}...`);
+      const r = await postToScript(chunkPayload, 180000);
+      if (!r.ok) throw new Error(r.msg || 'Gagal upload bagian ' + (ci + 1));
+      if (r.done) return r;
     }
-    throw new Error('Upload selesai tapi tidak ada respons akhir dari server');
+    throw new Error('Semua bagian terkirim tapi tidak ada konfirmasi dari server');
   }
 
-  // Upload satu file ke Drive — selalu pakai GET (tidak ada CORS issue seperti POST)
-  async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulanVal, uploadedBy) {
-    const payloadObj = {
-      action: 'uploadOnly',
-      base64Data, fileName, mimeType,
-      subFolder, bulan: bulanVal, uploadedBy,
-    };
+  // ── DEBUG HELPER: test koneksi ke Apps Script ─────────────────────────────
+  // Panggil window.testApiConnection() dari browser console untuk diagnosa
+  window.testApiConnection = async function() {
+    console.log('Testing API connection to:', API_URL);
     try {
-      const r = await uploadViaGet(payloadObj, 120000);
-      if (r && r.ok) return r;
-      throw new Error(r ? (r.msg || 'Server menolak') : 'Respons kosong');
-    } catch (err) {
-      if (err.message === 'Failed to fetch' || err.message.includes('Failed to fetch')) {
-        throw new Error('Koneksi ke server gagal. Pastikan internet aktif, lalu coba lagi.');
-      }
-      throw err;
+      const url = API_URL + '?data=' + encodeURIComponent(JSON.stringify({action:'getMedia'}));
+      const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+      const text = await res.text();
+      console.log('GET test response (first 200 chars):', text.slice(0, 200));
+      console.log('Status:', res.status, res.statusText);
+    } catch(e) {
+      console.error('GET test failed:', e);
     }
-  }
+    try {
+      const body = JSON.stringify({action:'getMedia'});
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', API_URL, false); // sync untuk debug
+      xhr.send(body);
+      console.log('POST XHR status:', xhr.status);
+      console.log('POST XHR response (first 200 chars):', xhr.responseText.slice(0, 200));
+    } catch(e) {
+      console.error('POST XHR test failed:', e);
+    }
+  };
 
   try {
     setProgress(btn, 5, `Mempersiapkan ${totalFiles} file...`);
