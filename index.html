@@ -2071,19 +2071,16 @@ async function doUpload() {
         try {
           resolve(parseResponse(xhr.responseText));
         } catch(e) {
-          // XHR berhasil tapi response bukan JSON murni —
-          // kemungkinan Apps Script mengembalikan HTML error page.
-          // Untuk payload file (base64/chunk), tidak ada fallback GET yang berguna
-          // karena URL akan terlalu panjang — langsung reject.
-          if (jsonString.includes('"base64Data"') || jsonString.includes('"chunk"')) {
-            reject(new Error('Respons server tidak valid (kemungkinan timeout Apps Script). Coba lagi.'));
-          } else {
-            // Non-file payload: coba GET sebagai fallback
+          // Jika XHR berhasil tapi response tidak valid, coba GET sebagai fallback
+          // (hanya untuk payload kecil tanpa base64)
+          if (!jsonString.includes('"base64Data"') && !jsonString.includes('"chunk"')) {
             const url = API_URL + '?data=' + encodeURIComponent(jsonString);
             fetch(url, { method: 'GET', redirect: 'follow' })
               .then(r => r.text())
               .then(t => { try { resolve(parseResponse(t)); } catch(e2) { reject(e2); } })
               .catch(reject);
+          } else {
+            reject(e);
           }
         }
       };
@@ -2106,43 +2103,18 @@ async function doUpload() {
     });
   }
 
-  // Upload satu file ke Drive menggunakan chunking via POST XHR
-  // Strategi chunk dipilih karena POST XHR (tanpa Content-Type) adalah
-  // "simple request" — tidak kena CORS preflight & redirect Apps Script
-  // ditangani otomatis oleh browser.
-  //
-  // ❌ DIHAPUS: direct uploadOnly via POST — terbukti gagal karena
-  //    body JSON sering tidak ter-parse Apps Script (Content-Type missing)
-  //    → menghasilkan "Action tidak dikenal" meski koneksi OK.
-  // ✅ SOLUSI: langsung pakai uploadChunk untuk SEMUA file,
-  //    termasuk file kecil (1 chunk = selesai dalam 1 request).
+  // Upload satu file ke Drive — kirim langsung 1 POST, tidak ada chunking
+  // Apps Script doPost bisa terima body besar tanpa batasan seperti URL
+  // Tidak pakai PropertiesService sama sekali → tidak ada kuota overflow
   async function uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulanVal, uploadedBy) {
-    const uploadId = Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    const CHUNK    = 180000; // 180KB base64 per chunk — aman untuk Apps Script body limit
-    const total    = Math.ceil(base64Data.length / CHUNK);
-
-    let lastResult = null;
-    for (let ci = 0; ci < total; ci++) {
-      const chunk = base64Data.slice(ci * CHUNK, (ci + 1) * CHUNK);
-      const chunkPayload = JSON.stringify({
-        action: 'uploadChunk', uploadId,
-        index: ci, total, chunk,
-        fileName, mimeType, subFolder,
-        bulan: bulanVal, uploadedBy,
-      });
-      setProgress(btn, 15 + Math.round(((ci + 0.5) / total) * 72),
-        total === 1
-          ? `Mengupload file...`
-          : `Mengirim bagian ${ci + 1}/${total}...`
-      );
-      const r = await postToScript(chunkPayload, 180000);
-      if (!r || !r.ok) throw new Error((r && r.msg) || 'Gagal upload bagian ' + (ci + 1));
-      if (r.done) return r;
-      lastResult = r;
-    }
-    // Jika total=1 dan server belum kembalikan done=true, anggap selesai
-    if (lastResult) return lastResult;
-    throw new Error('Semua bagian terkirim tapi tidak ada konfirmasi dari server');
+    const payload = JSON.stringify({
+      action: 'uploadDirect',
+      base64Data, fileName, mimeType,
+      subFolder, bulan: bulanVal, uploadedBy,
+    });
+    const r = await postToScript(payload, 300000); // timeout 5 menit untuk file besar
+    if (r && r.ok) return r;
+    throw new Error((r && r.msg) || 'Upload gagal, coba lagi');
   }
 
   // ── DEBUG HELPER: test koneksi ke Apps Script ─────────────────────────────
@@ -2171,7 +2143,7 @@ async function doUpload() {
   };
 
   try {
-    setProgress(btn, 3, `Mempersiapkan ${totalFiles} file...`);
+    setProgress(btn, 5, `Mempersiapkan ${totalFiles} file...`);
 
     // ── STEP 1: Konversi semua file ke base64 lokal (cepat) ──────────
     const filePayloads = [];
@@ -2181,7 +2153,7 @@ async function doUpload() {
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
       const base64 = await fileToBase64(file);
       filePayloads.push({ base64Data: base64, fileName: file.name, mimeType: file.type || 'application/octet-stream' });
-      setProgress(btn, 3 + Math.round((i + 1) / totalFiles * 7), `Membaca file ${i+1}/${totalFiles}...`);
+      setProgress(btn, 5 + Math.round((i + 1) / totalFiles * 10), `Membaca file ${i+1}/${totalFiles}...`);
     }
 
     // ── STEP 2: Upload ke Drive satu per satu — progress nyata per file ──
@@ -2192,14 +2164,12 @@ async function doUpload() {
 
     for (let i = 0; i < filePayloads.length; i++) {
       const { base64Data, fileName, mimeType } = filePayloads[i];
-      // Rentang progress per file: 10% s/d 88%
-      const pctStart = 10 + Math.round(i / totalFiles * 78);
-      const pctEnd   = 10 + Math.round((i + 1) / totalFiles * 78);
+      const pctStart = 15 + Math.round(i / totalFiles * 72);
+      const pctEnd   = 15 + Math.round((i + 1) / totalFiles * 72);
 
       setProgress(btn, pctStart, `Mengupload file ${i+1}/${totalFiles}...`);
       const r = await uploadFileToDrive(base64Data, fileName, mimeType, subFolder, bulan, uploadedBy);
       driveUrls.push(r.url);
-
       setProgress(btn, pctEnd, `File ${i+1}/${totalFiles} selesai ✓`);
     }
 
