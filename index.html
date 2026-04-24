@@ -1574,6 +1574,65 @@ async function downloadFromFolder(item) {
   }
 }
 
+// ===== DOWNLOAD LANGSUNG SEMUA FILE =====
+async function downloadItem(id) {
+  const item = mediaData.find(d => d.id === id);
+  if (!item) return;
+
+  // Jika ada driveFolderId → ambil semua file dari folder via Apps Script
+  if (item.driveFolderId) {
+    const btn = document.querySelector(`#card-${id} .btn-download`);
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+    try {
+      const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
+      if (!resp || !resp.ok || !Array.isArray(resp.files) || resp.files.length === 0) {
+        throw new Error('Tidak ada file dalam folder ini.');
+      }
+      resp.files.forEach(f => {
+        const a = document.createElement('a');
+        a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + f.id;
+        a.download = f.name || item.title;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+      showToast('success', `Mengunduh ${resp.files.length} file dari "${item.title}"...`);
+    } catch(e) {
+      showToast('error', 'Gagal mengambil file: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+    }
+    return;
+  }
+
+  // Fallback: dari driveUrls / driveUrl
+  const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls : parseUrls(item.driveUrls);
+  const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
+
+  if (urls.length === 0) {
+    showToast('error', 'File belum tersedia. Hubungi tim Marketing.');
+    return;
+  }
+
+  urls.forEach(url => {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match || !match[1]) return;
+    const a = document.createElement('a');
+    a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
+    a.download = item.title;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
+  showToast('success', total > 1 ? `Mengunduh ${total} file...` : `Materi "${item.title}" sedang diunduh...`);
+}
+
 // ===== MODAL =====
 function openModal(name) {
   document.getElementById('modal-' + name).classList.add('open');
@@ -1892,8 +1951,8 @@ function buildCard(item) {
     : '';
 
   const dlBtn = canDl
-    ? `<button class="btn-download flex-1" onclick="openPreview(${item.id})">
-         <i class="fa-solid fa-eye"></i> View
+    ? `<button class="btn-download flex-1" onclick="downloadItem(${item.id})">
+         <i class="fa-solid fa-download"></i> Download
        </button>`
     : `<button class="btn-download-locked flex-1" disabled title="Materi dikunci oleh Marketing">
          <i class="fa-solid fa-lock"></i> Terkunci
