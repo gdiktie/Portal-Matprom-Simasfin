@@ -314,19 +314,19 @@
 
     <!-- Month Tabs -->
     <div class="mb-8">
-      <!-- Row 1: judul kiri, search + upload + refresh kanan — sejajar -->
+      <!-- Row 1: judul kiri, search + upload(marketing) + refresh kanan -->
       <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <h2 class="section-title font-sora">Materi Promosi</h2>
           <p class="section-sub">Pilih bulan untuk melihat materi yang tersedia.</p>
         </div>
-        <!-- Search + Upload (marketing only) + Refresh dalam satu baris -->
         <div class="flex items-center gap-2">
           <div class="relative">
             <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
             <input type="text" id="search-input" placeholder="Cari materi..." class="input-field pl-9 w-52" oninput="filterCards()">
           </div>
-          <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 16px;font-size:.8rem;white-space:nowrap;">
+          <!-- Tombol upload hanya muncul untuk Marketing -->
+          <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 18px;font-size:.8rem;white-space:nowrap;">
             <i class="fa-solid fa-cloud-arrow-up"></i> Upload
           </button>
           <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
@@ -870,40 +870,41 @@ async function apiPost(action, payload = {}) {
 
 
 
-// ===== THUMB + DESKRIPSI CACHE (sessionStorage) =====
-// Google Sheets tidak menyimpan base64 thumb karena terlalu besar.
-// Kita simpan thumb & deskripsi per-item di sessionStorage, lalu merge setiap kali data server datang.
-const THUMB_CACHE_KEY = 'sm_thumb_cache';
+// ===== THUMB/DESKRIPSI/DRIVEURL CACHE (localStorage) =====
+// Google Sheets tidak bisa menyimpan base64 thumbnail (terlalu besar).
+// Kita simpan semua field lokal (thumb, thumbs, deskripsi, driveUrl, driveUrls) per ID
+// ke localStorage agar tetap ada saat halaman di-refresh.
+const MEDIA_CACHE_KEY = 'sm_media_local_cache';
 
-function saveThumbCache() {
+function saveMediaLocalCache() {
   try {
     const cache = {};
     mediaData.forEach(item => {
-      cache[item.id] = {
-        thumb     : item.thumb     || null,
-        thumbs    : item.thumbs    || [],
-        deskripsi : item.deskripsi || '',
-        driveUrls : item.driveUrls || [],
-        driveUrl  : item.driveUrl  || null,
+      cache[String(item.id)] = {
+        thumb    : item.thumb     || null,
+        thumbs   : item.thumbs    || [],
+        deskripsi: item.deskripsi || '',
+        driveUrl : item.driveUrl  || null,
+        driveUrls: item.driveUrls || [],
       };
     });
-    sessionStorage.setItem(THUMB_CACHE_KEY, JSON.stringify(cache));
+    localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
   } catch(e) { /* storage penuh — abaikan */ }
 }
 
-function mergeThumbCache(items) {
+function mergeMediaLocalCache(items) {
   try {
-    const raw = sessionStorage.getItem(THUMB_CACHE_KEY);
+    const raw = localStorage.getItem(MEDIA_CACHE_KEY);
     if (!raw) return items;
     const cache = JSON.parse(raw);
     return items.map(item => {
-      const c = cache[item.id];
+      const c = cache[String(item.id)];
       if (!c) return item;
       return {
         ...item,
-        // Pakai dari cache jika server tidak punya (server tidak simpan base64)
+        // Pakai dari cache jika server tidak kirim (server tidak bisa simpan base64)
         thumb    : item.thumb     || c.thumb     || null,
-        thumbs   : (item.thumbs   && item.thumbs.length > 0)   ? item.thumbs   : (c.thumbs   || []),
+        thumbs   : (item.thumbs   && item.thumbs.length   > 0) ? item.thumbs   : (c.thumbs   || []),
         deskripsi: item.deskripsi || c.deskripsi || '',
         driveUrl : item.driveUrl  || c.driveUrl  || null,
         driveUrls: (item.driveUrls && item.driveUrls.length > 0) ? item.driveUrls : (c.driveUrls || []),
@@ -935,10 +936,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved) {
     currentUser = JSON.parse(saved);
     await loadMediaFromSheets();
-    saveThumbCache(); // ✅ simpan thumb/deskripsi/driveUrls ke sessionStorage setelah load
+    saveMediaLocalCache(); // ✅ simpan thumb/deskripsi/driveUrls ke localStorage
     onLoginSuccess();
 
-    // ✅ Auto-refresh setiap 30 detik agar divisi lain dapat update lock & deskripsi terbaru
+    // ✅ Auto-refresh setiap 30 detik — merge cache agar thumb tidak hilang
     setInterval(async () => {
       try {
         const resp = await apiCall('getMedia');
@@ -948,10 +949,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             locked   : item.locked    === true,
             deskripsi: item.deskripsi || '',
           }));
-          mediaData = mergeThumbCache(normalized); // ✅ merge thumb dari cache
+          mediaData = mergeMediaLocalCache(normalized);
           renderCards();
         }
-      } catch(e) { /* silent — jangan ganggu user dengan error */ }
+      } catch(e) { /* silent */ }
     }, 30000);
   }
 });
@@ -989,8 +990,9 @@ async function loadMediaFromSheets() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      // ✅ KRITIS: merge thumb/deskripsi dari sessionStorage karena server tidak simpan base64
-      mediaData = mergeThumbCache(normalized);
+      // ✅ KRITIS: merge thumb/deskripsi/driveUrls dari localStorage
+      // karena Google Sheets tidak menyimpan base64 thumbnail
+      mediaData = mergeMediaLocalCache(normalized);
     }
   } catch(e) {
     console.warn('Gagal load dari Sheets, pakai data lokal', e);
@@ -1498,7 +1500,7 @@ async function triggerPreviewDownload() {
     return;
   }
 
-  // ✅ Download semua file — buka tiap URL di tab baru dengan jeda agar browser tidak blokir
+  // ✅ Buka SETIAP file langsung di tab baru — tidak ada ZIP/RAR
   closePreviewBtn();
   urls.forEach((url, i) => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -1512,12 +1514,12 @@ async function triggerPreviewDownload() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    }, i * 800);
+    }, i * 700);
   });
 
-  const totalValid = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
-  showToast('success', totalValid > 1
-    ? `Mengunduh ${totalValid} file... (masing-masing akan terbuka)`
+  const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
+  showToast('success', total > 1
+    ? `Mengunduh ${total} file — setiap file dibuka di tab baru`
     : 'Materi sedang diunduh dari Google Drive...');
 }
 
@@ -1687,11 +1689,11 @@ function onLoginSuccess() {
     : 'Cabang · ' + currentUser.cabang;
   document.getElementById('nav-role').innerHTML = roleLabel;
 
-  // Hanya Marketing yang dapat tombol upload (tampil inline di sebelah search)
-  const btnUploadInline = document.getElementById('btn-upload-inline');
-  if (btnUploadInline) {
-    if (isMarketing()) btnUploadInline.classList.remove('hidden');
-    else btnUploadInline.classList.add('hidden');
+  // Hanya Marketing yang dapat tombol upload (inline di sebelah search)
+  const btnUpInline = document.getElementById('btn-upload-inline');
+  if (btnUpInline) {
+    if (isMarketing()) btnUpInline.classList.remove('hidden');
+    else btnUpInline.classList.add('hidden');
   }
   renderCards();
 }
@@ -1907,8 +1909,7 @@ async function doRefreshMedia() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      mediaData = mergeThumbCache(mediaData); // ✅ merge thumb dari cache
-      saveThumbCache();
+      mediaData = mergeMediaLocalCache(mediaData); // ✅ merge thumb dari cache
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -1939,13 +1940,12 @@ function confirmDownload() {
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
 
-  // Guard: cegah download jika locked & bukan marketing
   if (item.locked === true && !isMarketing()) {
     showToast('error', 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.');
     return;
   }
 
-  // ✅ Kumpulkan SEMUA URL — driveUrls (multi) diprioritaskan, fallback ke driveUrl (single)
+  // ✅ Kumpulkan SEMUA URL: driveUrls (multi) lebih prioritas dari driveUrl (single)
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls
     : (item.driveUrl ? [item.driveUrl] : []);
@@ -1955,9 +1955,9 @@ function confirmDownload() {
     return;
   }
 
-  // ✅ Download SEMUA file — buka setiap URL di tab baru dengan jeda 800ms
-  // (fetch langsung ke Drive diblokir CORS, jadi buka tab = cara yang bisa bekerja)
-  let count = 0;
+  // ✅ Buka SETIAP file langsung di tab baru — tidak ada ZIP/RAR
+  // Jeda 700ms antar tab agar browser tidak anggap popup
+  let opened = 0;
   urls.forEach((url, i) => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
@@ -1970,16 +1970,14 @@ function confirmDownload() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      count++;
-    }, i * 800); // jeda antar file agar browser tidak blokir popup
+      opened++;
+    }, i * 700);
   });
 
-  const totalValid = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
-  if (totalValid > 1) {
-    showToast('success', `Mengunduh ${totalValid} file... (masing-masing akan terbuka)`);
-  } else {
-    showToast('success', 'Materi sedang diunduh dari Google Drive...');
-  }
+  const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
+  showToast('success', total > 1
+    ? `Mengunduh ${total} file — setiap file dibuka di tab baru`
+    : 'Materi sedang diunduh dari Google Drive...');
 
   if (currentUser && selectedDownloadId) {
     apiCall('logDownload', {
@@ -2035,7 +2033,7 @@ async function doUpload() {
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
-    saveThumbCache(); // ✅ simpan thumb/deskripsi ke cache
+    saveMediaLocalCache(); // ✅ cache
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
@@ -2125,7 +2123,7 @@ async function doUpload() {
     }
 
     mediaData.unshift(combinedItem);
-    saveThumbCache(); // ✅ simpan thumb/deskripsi/driveUrls ke cache agar tidak hilang saat refresh
+    saveMediaLocalCache(); // ✅ simpan thumb/thumbs/driveUrls/deskripsi ke localStorage
 
     setProgress(btn, 100, 'Berhasil!');
     setTimeout(() => {
@@ -2270,6 +2268,7 @@ async function doEdit() {
     if (!result || result.ok === false) throw new Error(result ? result.msg : 'Server menolak');
     // Sukses: tutup modal dan render
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
+    saveMediaLocalCache(); // ✅ simpan perubahan thumb/deskripsi ke localStorage
     closeModal('edit');
     activeMonth = bulan;
     document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
