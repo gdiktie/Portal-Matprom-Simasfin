@@ -328,11 +328,11 @@
             <i class="fa-solid fa-cloud-arrow-up"></i> Upload
           </button>
           <button id="btn-download-all" onclick="downloadAllVisible()" title="Download semua materi bulan ini"
-            style="background:linear-gradient(135deg,var(--navy),var(--navy-light));border:none;border-radius:10px;padding:9px 14px;cursor:pointer;color:#fff;font-size:.8rem;font-weight:700;transition:all .15s;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,35,64,.25);"
+            style="background:linear-gradient(135deg,var(--navy),var(--navy-light));border:none;border-radius:10px;padding:9px 14px;cursor:pointer;color:#fff;font-size:.8rem;font-weight:700;transition:all .2s;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,35,64,.2);"
             onmouseover="this.style.background='linear-gradient(135deg,var(--red),var(--orange))';this.style.boxShadow='0 4px 16px rgba(208,40,46,.35)'"
-            onmouseout="this.style.background='linear-gradient(135deg,var(--navy),var(--navy-light))';this.style.boxShadow='0 2px 10px rgba(26,35,64,.25)'">
+            onmouseout="this.style.background='linear-gradient(135deg,var(--navy),var(--navy-light))';this.style.boxShadow='0 2px 10px rgba(26,35,64,.2)'">
             <i class="fa-solid fa-download"></i>
-            <span class="hidden sm:inline">Download Semua</span>
+            <span class="hidden sm:inline" style="white-space:nowrap;">Download Semua</span>
           </button>
           <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
             style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
@@ -899,10 +899,11 @@ function parseUrls(val) {
 function normalizeItem(item) {
   return {
     ...item,
-    locked   : item.locked === true,
-    deskripsi: item.deskripsi || '',
-    driveUrls: parseUrls(item.driveUrls),
-    driveUrl : item.driveUrl || null,
+    locked       : item.locked === true,
+    deskripsi    : item.deskripsi || '',
+    driveUrls    : parseUrls(item.driveUrls),
+    driveUrl     : item.driveUrl || null,
+    driveFolderId: item.driveFolderId || null,
   };
 }
 
@@ -911,11 +912,12 @@ function saveMediaLocalCache() {
     const cache = {};
     mediaData.forEach(item => {
       cache[String(item.id)] = {
-        thumb    : item.thumb     || null,
-        thumbs   : item.thumbs    || [],
-        deskripsi: item.deskripsi || '',
-        driveUrl : item.driveUrl  || null,
-        driveUrls: parseUrls(item.driveUrls),
+        thumb        : item.thumb          || null,
+        thumbs       : item.thumbs         || [],
+        deskripsi    : item.deskripsi      || '',
+        driveUrl     : item.driveUrl       || null,
+        driveUrls    : parseUrls(item.driveUrls),
+        driveFolderId: item.driveFolderId  || null,
       };
     });
     localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
@@ -932,10 +934,11 @@ function mergeMediaLocalCache(items) {
       const cachedUrls  = parseUrls(c.driveUrls);
       return {
         ...item,
-        thumb    : item.thumb     || c.thumb     || null,
-        thumbs   : (item.thumbs   && item.thumbs.length   > 0) ? item.thumbs   : (c.thumbs   || []),
-        deskripsi: item.deskripsi || c.deskripsi || '',
-        driveUrl : item.driveUrl  || c.driveUrl  || null,
+        thumb        : item.thumb          || c.thumb          || null,
+        thumbs       : (item.thumbs && item.thumbs.length > 0) ? item.thumbs : (c.thumbs || []),
+        deskripsi    : item.deskripsi      || c.deskripsi      || '',
+        driveUrl     : item.driveUrl       || c.driveUrl       || null,
+        driveFolderId: item.driveFolderId  || c.driveFolderId  || null,
         // ✅ Pakai dari cache jika server tidak kirim array (atau kirim array kosong)
         driveUrls: serverUrls.length > 0 ? serverUrls : cachedUrls,
       };
@@ -1516,7 +1519,13 @@ function triggerPreviewDownload() {
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
 
-  // Kumpulkan SEMUA URL
+  // ✅ Jika ada driveFolderId → ambil semua file dari folder via Apps Script
+  if (item.driveFolderId) {
+    downloadFromFolder(item);
+    return;
+  }
+
+  // Fallback: kumpulkan dari driveUrls / driveUrl seperti semula
   const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls : parseUrls(item.driveUrls);
   const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
@@ -1526,7 +1535,6 @@ function triggerPreviewDownload() {
     return;
   }
 
-  // ✅ Buka SETIAP file di tab baru — SYNCHRONOUS agar tidak diblokir browser
   urls.forEach(url => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
@@ -1538,6 +1546,39 @@ function triggerPreviewDownload() {
   showToast('success', total > 1
     ? `Membuka ${total} tab unduhan...`
     : 'Materi sedang diunduh dari Google Drive...');
+}
+
+// ✅ Download semua file dari folder Drive berdasarkan driveFolderId
+async function downloadFromFolder(item) {
+  const dlBtn = document.getElementById('preview-dl-btn');
+  const origHtml = dlBtn.innerHTML;
+  dlBtn.disabled = true;
+  dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mengambil file...';
+
+  try {
+    const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
+    if (!resp || !resp.ok || !Array.isArray(resp.files) || resp.files.length === 0) {
+      throw new Error('Tidak ada file dalam folder ini.');
+    }
+
+    const files = resp.files; // [{id, name, mimeType}, ...]
+    dlBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Mengunduh ${files.length} file...`;
+
+    for (let i = 0; i < files.length; i++) {
+      const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + files[i].id;
+      window.open(dlUrl, '_blank');
+      if (i < files.length - 1) await new Promise(r => setTimeout(r, 350));
+    }
+
+    showToast('success', files.length > 1
+      ? `Membuka ${files.length} tab unduhan dari folder "${item.title}"...`
+      : `Materi "${item.title}" sedang diunduh...`);
+  } catch(e) {
+    showToast('error', 'Gagal mengambil file: ' + e.message);
+  } finally {
+    dlBtn.disabled = false;
+    dlBtn.innerHTML = origHtml;
+  }
 }
 }
 
@@ -1956,7 +1997,19 @@ function confirmDownload() {
     return;
   }
 
-  // Kumpulkan SEMUA URL
+  // ✅ Jika ada driveFolderId → download semua file dari folder Drive
+  if (item.driveFolderId) {
+    previewCurrentId = item.id; // set supaya downloadFromFolder bisa pakai
+    // Buat pseudo-button untuk downloadFromFolder
+    const pseudoBtn = { innerHTML: '', disabled: false };
+    downloadFromFolder(item);
+    if (currentUser && selectedDownloadId) {
+      apiCall('logDownload', { userId: currentUser.idcard4, itemId: String(selectedDownloadId), itemTitle: item.title }).catch(() => {});
+    }
+    return;
+  }
+
+  // Fallback: Kumpulkan SEMUA URL
   const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls : parseUrls(item.driveUrls);
   const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
@@ -1966,7 +2019,7 @@ function confirmDownload() {
     return;
   }
 
-  // ✅ Buka SETIAP file di tab baru — SYNCHRONOUS (masih dalam user gesture, tidak diblokir browser)
+  // Buka SETIAP file di tab baru
   urls.forEach(url => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
@@ -2073,7 +2126,10 @@ async function doUpload() {
       const payload = JSON.stringify({
         action: 'uploadAndSave', base64Data: base64,
         fileName: file.name, mimeType: file.type || 'application/octet-stream',
-        subFolder, bulan, uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
+        subFolder, bulan,
+        // ✅ Jalur folder terstruktur: Portal Matprom → Bulan → Kategori → Judul
+        folderPath: ['Portal Matprom', bulan, subFolder, judul],
+        uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
         item: tempItem,
       });
 
@@ -2085,6 +2141,7 @@ async function doUpload() {
 
       driveUrls.push(r.url);
       tempIds.push(tempId);
+      if (r.folderId && !window._lastFolderId) window._lastFolderId = r.folderId;
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
     }
 
@@ -2105,9 +2162,12 @@ async function doUpload() {
       thumbs   : thumbs,
       driveUrl : driveUrls[0] || null,
       driveUrls: driveUrls,
+      // ✅ Simpan ID folder judul di Drive → dipakai untuk download semua
+      driveFolderId: window._lastFolderId || null,
       deskripsi: deskripsi || '',
       locked   : isLocked,
     };
+    window._lastFolderId = null; // reset
 
     // Update item pertama jadi carousel gabungan
     setProgress(btn, 93, 'Menyimpan metadata...');
@@ -2315,7 +2375,6 @@ async function deleteCard(id) {
 async function downloadAllVisible() {
   if (!currentUser) { showToast('error', 'Silakan login terlebih dahulu'); return; }
 
-  // Kumpulkan item yang tampil sesuai bulan & filter kategori aktif
   const q = (document.getElementById('search-input').value || '').toLowerCase();
   const filtered = mediaData.filter(d => {
     const matchMonth = d.month === activeMonth;
@@ -2330,49 +2389,88 @@ async function downloadAllVisible() {
     return;
   }
 
-  // Kumpulkan semua URL dari semua item
-  const allUrls = [];
-  filtered.forEach(item => {
-    const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
-      ? item.driveUrls : parseUrls(item.driveUrls);
-    const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
-    urls.forEach(url => {
-      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      if (match && match[1]) {
-        allUrls.push({ id: match[1], title: item.title });
-      }
-    });
-  });
-
-  if (allUrls.length === 0) {
-    showToast('error', 'Belum ada file yang tersedia untuk diunduh. Hubungi tim Marketing.');
-    return;
-  }
-
-  // Konfirmasi sebelum buka banyak tab
   const confirmed = confirm(
-    `Akan mengunduh ${allUrls.length} file dari ${filtered.length} materi di bulan ${activeMonth}` +
+    `Akan mengunduh semua file dari ${filtered.length} materi di bulan ${activeMonth}` +
     (activeCat !== 'all' ? ` (kategori: ${activeCat})` : '') +
-    `.\n\nLanjutkan?`
+    `.\n\nFile diambil dari folder Google Drive sesuai nama materi.\nLanjutkan?`
   );
   if (!confirmed) return;
 
-  // Update tombol jadi loading
   const btn = document.getElementById('btn-download-all');
   const origHtml = btn.innerHTML;
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
   btn.disabled = true;
 
-  // Buka setiap file di tab baru dengan jeda kecil agar browser tidak blokir
-  for (let i = 0; i < allUrls.length; i++) {
-    const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + allUrls[i].id;
-    window.open(dlUrl, '_blank');
-    if (i < allUrls.length - 1) await new Promise(r => setTimeout(r, 350));
-  }
+  let totalDownloaded = 0;
 
-  btn.innerHTML = origHtml;
-  btn.disabled = false;
-  showToast('success', `Membuka ${allUrls.length} tab unduhan untuk ${filtered.length} materi...`);
+  try {
+    for (const item of filtered) {
+      // ✅ Utamakan folder Drive
+      if (item.driveFolderId) {
+        try {
+          const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
+          if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
+            for (let i = 0; i < resp.files.length; i++) {
+              window.open('https://drive.google.com/uc?export=download&confirm=t&id=' + resp.files[i].id, '_blank');
+              totalDownloaded++;
+              if (i < resp.files.length - 1) await new Promise(r => setTimeout(r, 350));
+            }
+          }
+        } catch(e) { /* skip item */ }
+      } else {
+        // Fallback: gunakan driveUrls
+        const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+          ? item.driveUrls : parseUrls(item.driveUrls);
+        const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
+        for (let i = 0; i < urls.length; i++) {
+          const match = urls[i].match(/\/d\/([a-zA-Z0-9_-]+)/);
+          if (match && match[1]) {
+            window.open('https://drive.google.com/uc?export=download&confirm=t&id=' + match[1], '_blank');
+            totalDownloaded++;
+            if (i < urls.length - 1) await new Promise(r => setTimeout(r, 350));
+          }
+        }
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    showToast('success', `Membuka ${totalDownloaded} tab unduhan dari ${filtered.length} materi...`);
+  } catch(e) {
+    showToast('error', 'Terjadi kesalahan: ' + e.message);
+  } finally {
+    btn.innerHTML = origHtml;
+    btn.disabled = false;
+  }
+}
+
+// ✅ Download semua file dari folder Drive berdasarkan driveFolderId
+async function downloadFromFolder(item) {
+  // Cari preview-dl-btn jika ada (preview overlay), buat pseudo jika tidak
+  const dlBtn = document.getElementById('preview-dl-btn') || { innerHTML: '', disabled: false };
+  const origHtml = dlBtn.innerHTML;
+  if (dlBtn.id) { dlBtn.disabled = true; dlBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mengambil file...'; }
+
+  try {
+    const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
+    if (!resp || !resp.ok || !Array.isArray(resp.files) || resp.files.length === 0) {
+      throw new Error('Tidak ada file dalam folder ini.');
+    }
+
+    const files = resp.files;
+    if (dlBtn.id) dlBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Mengunduh ${files.length} file...`;
+
+    for (let i = 0; i < files.length; i++) {
+      window.open('https://drive.google.com/uc?export=download&confirm=t&id=' + files[i].id, '_blank');
+      if (i < files.length - 1) await new Promise(r => setTimeout(r, 350));
+    }
+
+    showToast('success', files.length > 1
+      ? `Membuka ${files.length} tab unduhan dari folder "${item.title}"...`
+      : `Materi "${item.title}" sedang diunduh...`);
+  } catch(e) {
+    showToast('error', 'Gagal mengambil file: ' + e.message);
+  } finally {
+    if (dlBtn.id) { dlBtn.disabled = false; dlBtn.innerHTML = origHtml || '<i class="fa-solid fa-download"></i> Unduh Materi'; }
+  }
 }
 
 // ===== UTILS =====
