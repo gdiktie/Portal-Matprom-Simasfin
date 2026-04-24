@@ -890,12 +890,17 @@ function parseUrls(val) {
 }
 
 function normalizeItem(item) {
+  // driveUrls bisa dari kolom driveUrls (string JSON) ATAU kolom driveUrlsJson
+  let urls = parseUrls(item.driveUrls);
+  if (urls.length === 0 && item.driveUrlsJson) {
+    try { const arr = JSON.parse(item.driveUrlsJson); if (Array.isArray(arr)) urls = arr.filter(Boolean); } catch(e) {}
+  }
   return {
     ...item,
     locked       : item.locked === true,
     deskripsi    : item.deskripsi || '',
-    driveUrls    : parseUrls(item.driveUrls),
-    driveUrl     : item.driveUrl || null,
+    driveUrls    : urls,
+    driveUrl     : item.driveUrl || (urls.length > 0 ? urls[0] : null),
     driveFolderId: item.driveFolderId || null,
   };
 }
@@ -1579,58 +1584,72 @@ async function downloadItem(id) {
   const item = mediaData.find(d => d.id === id);
   if (!item) return;
 
-  // Jika ada driveFolderId → ambil semua file dari folder via Apps Script
-  if (item.driveFolderId) {
-    const btn = document.querySelector(`#card-${id} .btn-download`);
-    const origHtml = btn ? btn.innerHTML : '';
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
-    try {
+  const btn = document.querySelector(`#card-${id} .btn-download`);
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; }
+
+  try {
+    // Prioritas 1: driveFolderId → ambil SEMUA file dari folder Drive via API
+    if (item.driveFolderId) {
       const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
-      if (!resp || !resp.ok || !Array.isArray(resp.files) || resp.files.length === 0) {
-        throw new Error('Tidak ada file dalam folder ini.');
+      if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
+        triggerDownloads(resp.files.map(f => ({
+          url: 'https://drive.google.com/uc?export=download&confirm=t&id=' + f.id,
+          name: f.name || item.title,
+        })));
+        showToast('success', `Mengunduh ${resp.files.length} file dari "${item.title}"...`);
+        return;
       }
-      resp.files.forEach(f => {
-        const a = document.createElement('a');
-        a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + f.id;
-        a.download = f.name || item.title;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      });
-      showToast('success', `Mengunduh ${resp.files.length} file dari "${item.title}"...`);
-    } catch(e) {
-      showToast('error', 'Gagal mengambil file: ' + e.message);
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
     }
-    return;
+
+    // Prioritas 2: driveUrls array → download semua URL sekaligus
+    const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+      ? item.driveUrls
+      : (item.driveUrl ? [item.driveUrl] : []);
+
+    if (urls.length === 0) {
+      showToast('error', 'File belum tersedia. Hubungi tim Marketing.');
+      return;
+    }
+
+    const fileLinks = urls.reduce((acc, url, idx) => {
+      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) acc.push({
+        url: 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1],
+        name: urls.length > 1 ? `${item.title}_${idx + 1}` : item.title,
+      });
+      return acc;
+    }, []);
+
+    if (fileLinks.length === 0) {
+      showToast('error', 'Format URL tidak valid. Hubungi tim Marketing.');
+      return;
+    }
+
+    triggerDownloads(fileLinks);
+    showToast('success', fileLinks.length > 1
+      ? `Mengunduh ${fileLinks.length} file dari "${item.title}"...`
+      : `Materi "${item.title}" sedang diunduh...`);
+
+  } catch(e) {
+    showToast('error', 'Gagal download: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
   }
+}
 
-  // Fallback: dari driveUrls / driveUrl
-  const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
-    ? item.driveUrls : parseUrls(item.driveUrls);
-  const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
-
-  if (urls.length === 0) {
-    showToast('error', 'File belum tersedia. Hubungi tim Marketing.');
-    return;
-  }
-
-  urls.forEach(url => {
-    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (!match || !match[1]) return;
+// Helper: trigger multiple downloads sekaligus dengan nama file yang benar
+function triggerDownloads(fileLinks) {
+  fileLinks.forEach(({ url, name }) => {
     const a = document.createElement('a');
-    a.href = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-    a.download = item.title;
+    a.href = url;
+    a.download = name;
     a.target = '_blank';
+    a.rel = 'noopener noreferrer';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    setTimeout(() => document.body.removeChild(a), 200);
   });
-
-  const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
-  showToast('success', total > 1 ? `Mengunduh ${total} file...` : `Materi "${item.title}" sedang diunduh...`);
 }
 
 // ===== MODAL =====
@@ -2190,19 +2209,21 @@ async function doUpload() {
       try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
       if (!r || !r.ok) throw new Error((r && r.msg) || 'Gagal upload file ' + (i+1));
 
+      if (!r.url) throw new Error('Server tidak mengembalikan URL file ' + (i+1));
       driveUrls.push(r.url);
       tempIds.push(tempId);
-      if (r.folderId && !window._lastFolderId) window._lastFolderId = r.folderId;
+      // Selalu update folderId — semua file masuk folder yang sama
+      if (r.folderId) window._lastFolderId = r.folderId;
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
     }
 
-    // ── Bangun SATU item gabungan carousel ──────────────────────
-    setProgress(btn, 90, 'Menyusun carousel...');
+    // ── Bangun SATU item gabungan ──────────────────────
+    setProgress(btn, 90, 'Menyimpan metadata...');
     const sizeLabel = totalSize > 1048576
       ? (totalSize/1048576).toFixed(1)+' MB' : Math.round(totalSize/1024)+' KB';
 
     const combinedItem = {
-      id       : tempIds[0],           // gunakan ID item pertama
+      id       : tempIds[0],
       title    : judul,
       cat      : kat, segment: segMap[kat]||kat, month: bulan, isNew,
       icon     : iconMap[kat]||'fa-file',
@@ -2212,19 +2233,20 @@ async function doUpload() {
       thumb    : thumbs[0] || null,
       thumbs   : thumbs,
       driveUrl : driveUrls[0] || null,
+      // driveUrls sebagai array — Apps Script harus simpan sebagai JSON string ke Sheets
       driveUrls: driveUrls,
-      // ✅ Simpan ID folder judul di Drive → dipakai untuk download semua
+      driveUrlsJson: JSON.stringify(driveUrls),
       driveFolderId: window._lastFolderId || null,
       deskripsi: deskripsi || '',
       locked   : isLocked,
     };
-    window._lastFolderId = null; // reset
+    window._lastFolderId = null;
 
-    // Update item pertama jadi carousel gabungan
-    setProgress(btn, 93, 'Menyimpan metadata...');
+    // Update item pertama jadi item gabungan, hapus sisanya
+    setProgress(btn, 93, 'Menyimpan ke server...');
     try { await apiPost('editMedia', { item: combinedItem }); } catch(e) {}
 
-    // Hapus item-item sisa (indeks 1 ke atas) yang hanya temporary
+    // Hapus item temporary sisa (indeks 1 ke atas)
     for (let i = 1; i < tempIds.length; i++) {
       try { await apiPost('deleteMedia', { id: String(tempIds[i]) }); } catch(e) {}
     }
