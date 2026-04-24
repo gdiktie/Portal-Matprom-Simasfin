@@ -103,7 +103,7 @@
   .btn-upload-main:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(208,40,46,.4); }
 
   /* MODAL */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; pointer-events: none; transition: opacity .25s; }
   .modal-overlay.open { opacity: 1; pointer-events: all; }
   .modal-box { background: #fff; border-radius: 20px; max-width: 480px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.2); transform: translateY(20px) scale(.97); transition: transform .25s; max-height: 90vh; overflow-y: auto; }
   .modal-overlay.open .modal-box { transform: translateY(0) scale(1); }
@@ -326,6 +326,13 @@
           </div>
           <button id="btn-upload-inline" class="btn-upload-main hidden" onclick="openModal('upload')" style="padding:9px 18px;font-size:.8rem;white-space:nowrap;">
             <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+          </button>
+          <button id="btn-download-all" onclick="downloadAllVisible()" title="Download semua materi bulan ini"
+            style="background:linear-gradient(135deg,var(--navy),var(--navy-light));border:none;border-radius:10px;padding:9px 14px;cursor:pointer;color:#fff;font-size:.8rem;font-weight:700;transition:all .15s;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,35,64,.25);"
+            onmouseover="this.style.background='linear-gradient(135deg,var(--red),var(--orange))';this.style.boxShadow='0 4px 16px rgba(208,40,46,.35)'"
+            onmouseout="this.style.background='linear-gradient(135deg,var(--navy),var(--navy-light))';this.style.boxShadow='0 2px 10px rgba(26,35,64,.25)'">
+            <i class="fa-solid fa-download"></i>
+            <span class="hidden sm:inline">Download Semua</span>
           </button>
           <button onclick="doRefreshMedia()" title="Muat ulang materi terbaru"
             style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;cursor:pointer;color:var(--muted);font-size:.85rem;transition:all .15s;display:flex;align-items:center;flex-shrink:0;"
@@ -959,10 +966,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved) {
     currentUser = JSON.parse(saved);
     await loadMediaFromSheets();
-    saveMediaLocalCache(); // ✅ simpan thumb/deskripsi/driveUrls ke localStorage setelah load
+    saveMediaLocalCache();
     onLoginSuccess();
 
-    // ✅ Auto-refresh setiap 30 detik — merge cache agar thumb tidak hilang
     setInterval(async () => {
       try {
         const resp = await apiCall('getMedia');
@@ -973,6 +979,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch(e) { /* silent */ }
     }, 30000);
   }
+
+  // ✅ Safety net: pastikan loading overlay TIDAK menghalangi UI setelah init selesai
+  showLoadingOverlay(false);
 });
 
 // Ambil jumlah materi dari server dan tampilkan di hero stat — tanpa perlu login
@@ -1019,11 +1028,17 @@ function showLoadingOverlay(show) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'loading-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
     el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div>';
     document.body.appendChild(el);
   }
-  el.style.display = show ? 'flex' : 'none';
+  if (show) {
+    el.style.display = 'flex';
+    el.style.pointerEvents = 'all';
+  } else {
+    el.style.display = 'none';
+    el.style.pointerEvents = 'none';
+  }
 }
 
 function buildMonthTabs() {
@@ -2294,6 +2309,70 @@ async function deleteCard(id) {
   mediaData = mediaData.filter(d => d.id !== id);
   renderCards();
   showToast('success','Materi berhasil dihapus');
+}
+
+// ===== DOWNLOAD ALL =====
+async function downloadAllVisible() {
+  if (!currentUser) { showToast('error', 'Silakan login terlebih dahulu'); return; }
+
+  // Kumpulkan item yang tampil sesuai bulan & filter kategori aktif
+  const q = (document.getElementById('search-input').value || '').toLowerCase();
+  const filtered = mediaData.filter(d => {
+    const matchMonth = d.month === activeMonth;
+    const matchCat   = activeCat === 'all' || d.cat === activeCat || d.segment === activeCat;
+    const matchQ     = d.title.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q);
+    const canDl      = !d.locked || isMarketing();
+    return matchMonth && matchCat && matchQ && canDl;
+  });
+
+  if (filtered.length === 0) {
+    showToast('error', 'Tidak ada materi yang dapat diunduh saat ini.');
+    return;
+  }
+
+  // Kumpulkan semua URL dari semua item
+  const allUrls = [];
+  filtered.forEach(item => {
+    const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+      ? item.driveUrls : parseUrls(item.driveUrls);
+    const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
+    urls.forEach(url => {
+      const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        allUrls.push({ id: match[1], title: item.title });
+      }
+    });
+  });
+
+  if (allUrls.length === 0) {
+    showToast('error', 'Belum ada file yang tersedia untuk diunduh. Hubungi tim Marketing.');
+    return;
+  }
+
+  // Konfirmasi sebelum buka banyak tab
+  const confirmed = confirm(
+    `Akan mengunduh ${allUrls.length} file dari ${filtered.length} materi di bulan ${activeMonth}` +
+    (activeCat !== 'all' ? ` (kategori: ${activeCat})` : '') +
+    `.\n\nLanjutkan?`
+  );
+  if (!confirmed) return;
+
+  // Update tombol jadi loading
+  const btn = document.getElementById('btn-download-all');
+  const origHtml = btn.innerHTML;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+  btn.disabled = true;
+
+  // Buka setiap file di tab baru dengan jeda kecil agar browser tidak blokir
+  for (let i = 0; i < allUrls.length; i++) {
+    const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + allUrls[i].id;
+    window.open(dlUrl, '_blank');
+    if (i < allUrls.length - 1) await new Promise(r => setTimeout(r, 350));
+  }
+
+  btn.innerHTML = origHtml;
+  btn.disabled = false;
+  showToast('success', `Membuka ${allUrls.length} tab unduhan untuk ${filtered.length} materi...`);
 }
 
 // ===== UTILS =====
