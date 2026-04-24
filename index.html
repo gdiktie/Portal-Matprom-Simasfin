@@ -869,9 +869,8 @@ async function apiPost(action, payload = {}) {
 
 
 // ===== THUMB / DESKRIPSI / DRIVEURL CACHE (localStorage) =====
-// Google Sheets TIDAK bisa menyimpan base64 thumbnail (terlalu besar).
-// Setiap refresh, thumb/thumbs/deskripsi/driveUrl/driveUrls dari server selalu kosong.
-// Solusi: simpan per-ID ke localStorage agar survive refresh, merge setiap kali data server tiba.
+// Google Sheets TIDAK bisa menyimpan base64 thumbnail.
+// Setiap server fetch, thumb/thumbs selalu null. Simpan di localStorage per-ID.
 const MEDIA_CACHE_KEY = 'sm_media_local_v1';
 
 function saveMediaLocalCache() {
@@ -933,7 +932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved) {
     currentUser = JSON.parse(saved);
     await loadMediaFromSheets();
-    saveMediaLocalCache(); // ✅ simpan thumb/deskripsi/driveUrls ke localStorage setelah login
+    saveMediaLocalCache(); // ✅ simpan thumb/deskripsi/driveUrls ke localStorage setelah load
     onLoginSuccess();
 
     // ✅ Auto-refresh setiap 30 detik — merge cache agar thumb tidak hilang
@@ -946,7 +945,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             locked   : item.locked    === true,
             deskripsi: item.deskripsi || '',
           }));
-          mediaData = mergeMediaLocalCache(normalized); // ✅ merge thumb dari cache
+          mediaData = mergeMediaLocalCache(normalized);
           renderCards();
         }
       } catch(e) { /* silent */ }
@@ -988,7 +987,7 @@ async function loadMediaFromSheets() {
         deskripsi: item.deskripsi || '',
       }));
       // ✅ KRITIS: merge thumb/deskripsi/driveUrls dari localStorage
-      // karena Google Sheets tidak menyimpan base64 thumbnail
+      // karena Google Sheets tidak bisa menyimpan base64 thumbnail
       mediaData = mergeMediaLocalCache(normalized);
     }
   } catch(e) {
@@ -1367,11 +1366,9 @@ function openPreview(id) {
     noDescEl.style.display = '';
   }
 
-  // Tombol View — buka file di Google Drive (tab baru)
+  // Tombol Unduh Materi — jaga label HTML asli, hanya ubah disabled state
   const dlBtn  = document.getElementById('preview-dl-btn');
   const lockMsg = document.getElementById('preview-locked-msg');
-  const urlCount = Array.isArray(item.driveUrls) && item.driveUrls.length > 1
-    ? item.driveUrls.length : 0;
   if (locked && !mkt) {
     dlBtn.disabled = true;
     lockMsg.style.display = '';
@@ -1379,9 +1376,8 @@ function openPreview(id) {
     dlBtn.disabled = false;
     lockMsg.style.display = 'none';
   }
-  dlBtn.innerHTML = urlCount > 1
-    ? `<i class="fa-solid fa-eye"></i> View Semua (${urlCount} file)`
-    : `<i class="fa-solid fa-eye"></i> View di Google Drive`;
+  // Reset ke label asli (jangan override)
+  dlBtn.innerHTML = `<i class="fa-solid fa-download"></i> Unduh Materi`;
 
   // ── Build slides array ───────────────────────────────────────
   const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
@@ -1488,7 +1484,7 @@ async function triggerPreviewDownload() {
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
 
-  // ✅ Kumpulkan SEMUA URL — driveUrls (multi) lebih prioritas dari driveUrl (single)
+  // Kumpulkan SEMUA URL — driveUrls (multi) lebih prioritas dari driveUrl (single)
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls
     : (item.driveUrl ? [item.driveUrl] : []);
@@ -1498,25 +1494,22 @@ async function triggerPreviewDownload() {
     return;
   }
 
-  // ✅ Buka SETIAP file di tab baru sebagai view Google Drive (bukan download)
-  // Jeda 600ms agar browser tidak blokir popup
+  // ✅ Buka SETIAP file sebagai download di tab baru dengan jeda 700ms
   urls.forEach((url, i) => {
-    // Pastikan pakai URL view (bukan download)
-    // Format: https://drive.google.com/file/d/ID/view
-    let viewUrl = url;
-    // Jika URL sudah format /file/d/ID — pastikan diakhiri /view
-    if (url.match(/\/d\/[a-zA-Z0-9_-]+/) && !url.includes('/view')) {
-      viewUrl = url.replace(/\/?(edit|preview|download)[^/]*$/, '') + '/view';
-    }
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match || !match[1]) return;
+    const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
     setTimeout(() => {
-      window.open(viewUrl, '_blank', 'noopener,noreferrer');
-    }, i * 600);
+      const a = document.createElement('a');
+      a.href = dlUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }, i * 700);
   });
 
-  const total = urls.length;
+  const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
   showToast('success', total > 1
-    ? `Membuka ${total} file di Google Drive...`
-    : 'Membuka file di Google Drive...');
+    ? `Mengunduh ${total} file — setiap file dibuka di tab baru`
+    : 'Materi sedang diunduh dari Google Drive...');
 }
 
 // ===== MODAL =====
@@ -1902,7 +1895,8 @@ async function doRefreshMedia() {
         locked   : item.locked    === true,
         deskripsi: item.deskripsi || '',
       }));
-      mediaData = mergeMediaLocalCache(mediaData); // ✅ merge thumb dari cache
+      mediaData = mergeMediaLocalCache(mediaData);
+      saveMediaLocalCache(); // ✅ simpan ke localStorage
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -1938,6 +1932,7 @@ function confirmDownload() {
     return;
   }
 
+  // ✅ Kumpulkan SEMUA URL — driveUrls (multi) lebih prioritas dari driveUrl (single)
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls
     : (item.driveUrl ? [item.driveUrl] : []);
@@ -1947,7 +1942,7 @@ function confirmDownload() {
     return;
   }
 
-  // ✅ Buka SETIAP file di tab baru dengan jeda 700ms
+  // ✅ Buka SETIAP file di tab baru dengan jeda 700ms (tidak ada ZIP/RAR)
   urls.forEach((url, i) => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
@@ -2014,7 +2009,7 @@ async function doUpload() {
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
-    saveMediaLocalCache(); // ✅ simpan ke cache
+    saveMediaLocalCache(); // ✅ simpan ke localStorage
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
