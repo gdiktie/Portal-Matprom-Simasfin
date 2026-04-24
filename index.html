@@ -873,6 +873,32 @@ async function apiPost(action, payload = {}) {
 // Setiap server fetch, thumb/thumbs selalu null. Simpan di localStorage per-ID.
 const MEDIA_CACHE_KEY = 'sm_media_local_v1';
 
+// ✅ Helper: normalisasi driveUrls — Google Sheets bisa kembalikan string JSON, bukan array
+function parseUrls(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    // Coba parse sebagai JSON array
+    if (trimmed.startsWith('[')) {
+      try { const arr = JSON.parse(trimmed); if (Array.isArray(arr)) return arr.filter(Boolean); } catch(e) {}
+    }
+    // Fallback: pisah berdasarkan koma atau newline
+    return trimmed.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeItem(item) {
+  return {
+    ...item,
+    locked   : item.locked === true,
+    deskripsi: item.deskripsi || '',
+    driveUrls: parseUrls(item.driveUrls),
+    driveUrl : item.driveUrl || null,
+  };
+}
+
 function saveMediaLocalCache() {
   try {
     const cache = {};
@@ -882,7 +908,7 @@ function saveMediaLocalCache() {
         thumbs   : item.thumbs    || [],
         deskripsi: item.deskripsi || '',
         driveUrl : item.driveUrl  || null,
-        driveUrls: item.driveUrls || [],
+        driveUrls: parseUrls(item.driveUrls),
       };
     });
     localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
@@ -892,18 +918,19 @@ function saveMediaLocalCache() {
 function mergeMediaLocalCache(items) {
   try {
     const raw = localStorage.getItem(MEDIA_CACHE_KEY);
-    if (!raw) return items;
-    const cache = JSON.parse(raw);
+    const cache = raw ? JSON.parse(raw) : {};
     return items.map(item => {
-      const c = cache[String(item.id)];
-      if (!c) return item;
+      const c = cache[String(item.id)] || {};
+      const serverUrls  = parseUrls(item.driveUrls);
+      const cachedUrls  = parseUrls(c.driveUrls);
       return {
         ...item,
         thumb    : item.thumb     || c.thumb     || null,
         thumbs   : (item.thumbs   && item.thumbs.length   > 0) ? item.thumbs   : (c.thumbs   || []),
         deskripsi: item.deskripsi || c.deskripsi || '',
         driveUrl : item.driveUrl  || c.driveUrl  || null,
-        driveUrls: (item.driveUrls && item.driveUrls.length > 0) ? item.driveUrls : (c.driveUrls || []),
+        // ✅ Pakai dari cache jika server tidak kirim array (atau kirim array kosong)
+        driveUrls: serverUrls.length > 0 ? serverUrls : cachedUrls,
       };
     });
   } catch(e) { return items; }
@@ -940,12 +967,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const resp = await apiCall('getMedia');
         if (resp.ok && Array.isArray(resp.data)) {
-          const normalized = resp.data.map(item => ({
-            ...item,
-            locked   : item.locked    === true,
-            deskripsi: item.deskripsi || '',
-          }));
-          mediaData = mergeMediaLocalCache(normalized);
+          mediaData = mergeMediaLocalCache(resp.data.map(normalizeItem));
           renderCards();
         }
       } catch(e) { /* silent */ }
@@ -981,13 +1003,8 @@ async function loadMediaFromSheets() {
     showLoadingOverlay(true);
     const resp = await apiCall('getMedia');
     if (resp.ok && resp.data.length > 0) {
-      const normalized = resp.data.map(item => ({
-        ...item,
-        locked   : item.locked    === true,
-        deskripsi: item.deskripsi || '',
-      }));
-      // ✅ KRITIS: merge thumb/deskripsi/driveUrls dari localStorage
-      // karena Google Sheets tidak bisa menyimpan base64 thumbnail
+      // ✅ normalizeItem memastikan driveUrls selalu array (bukan string JSON dari Sheets)
+      const normalized = resp.data.map(normalizeItem);
       mediaData = mergeMediaLocalCache(normalized);
     }
   } catch(e) {
@@ -1479,37 +1496,34 @@ function closePreviewBtn() {
   document.getElementById('preview-next').style.display = 'none';
   document.body.style.overflow = '';
 }
-async function triggerPreviewDownload() {
+function triggerPreviewDownload() {
   if (!previewCurrentId) return;
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
 
-  // Kumpulkan SEMUA URL — driveUrls (multi) lebih prioritas dari driveUrl (single)
-  const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
-    ? item.driveUrls
-    : (item.driveUrl ? [item.driveUrl] : []);
+  // Kumpulkan SEMUA URL
+  const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls : parseUrls(item.driveUrls);
+  const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
 
   if (urls.length === 0) {
     showToast('error', 'File belum tersedia. Hubungi tim Marketing.');
     return;
   }
 
-  // ✅ Buka SETIAP file sebagai download di tab baru dengan jeda 700ms
-  urls.forEach((url, i) => {
+  // ✅ Buka SETIAP file di tab baru — SYNCHRONOUS agar tidak diblokir browser
+  urls.forEach(url => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
     const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-    setTimeout(() => {
-      const a = document.createElement('a');
-      a.href = dlUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }, i * 700);
+    window.open(dlUrl, '_blank');
   });
 
   const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
   showToast('success', total > 1
-    ? `Mengunduh ${total} file — setiap file dibuka di tab baru`
+    ? `Membuka ${total} tab unduhan...`
     : 'Materi sedang diunduh dari Google Drive...');
+}
 }
 
 // ===== MODAL =====
@@ -1890,12 +1904,7 @@ async function doRefreshMedia() {
     const resp = await apiCall('getMedia');
     if (resp.ok && Array.isArray(resp.data)) {
       // ✅ Normalisasi sama seperti loadMediaFromSheets agar locked & deskripsi konsisten
-      mediaData = resp.data.map(item => ({
-        ...item,
-        locked   : item.locked    === true,
-        deskripsi: item.deskripsi || '',
-      }));
-      mediaData = mergeMediaLocalCache(mediaData);
+      mediaData = mergeMediaLocalCache(resp.data.map(normalizeItem));
       saveMediaLocalCache(); // ✅ simpan ke localStorage
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
@@ -1932,31 +1941,27 @@ function confirmDownload() {
     return;
   }
 
-  // ✅ Kumpulkan SEMUA URL — driveUrls (multi) lebih prioritas dari driveUrl (single)
-  const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
-    ? item.driveUrls
-    : (item.driveUrl ? [item.driveUrl] : []);
+  // Kumpulkan SEMUA URL
+  const rawUrls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls : parseUrls(item.driveUrls);
+  const urls = rawUrls.length > 0 ? rawUrls : (item.driveUrl ? [item.driveUrl] : []);
 
   if (urls.length === 0) {
     showToast('error', 'File belum tersedia untuk diunduh.');
     return;
   }
 
-  // ✅ Buka SETIAP file di tab baru dengan jeda 700ms (tidak ada ZIP/RAR)
-  urls.forEach((url, i) => {
+  // ✅ Buka SETIAP file di tab baru — SYNCHRONOUS (masih dalam user gesture, tidak diblokir browser)
+  urls.forEach(url => {
     const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (!match || !match[1]) return;
     const dlUrl = 'https://drive.google.com/uc?export=download&confirm=t&id=' + match[1];
-    setTimeout(() => {
-      const a = document.createElement('a');
-      a.href = dlUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }, i * 700);
+    window.open(dlUrl, '_blank');
   });
 
   const total = urls.filter(u => u.match(/\/d\/([a-zA-Z0-9_-]+)/)).length;
   showToast('success', total > 1
-    ? `Mengunduh ${total} file — setiap file dibuka di tab baru`
+    ? `Membuka ${total} tab unduhan...`
     : 'Materi sedang diunduh dari Google Drive...');
 
   if (currentUser && selectedDownloadId) {
