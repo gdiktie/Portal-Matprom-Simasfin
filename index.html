@@ -621,7 +621,7 @@
           <div class="upload-zone" id="up-dropzone" onclick="document.getElementById('up-file').click()" ondragover="handleDragOver(event,'up-dropzone')" ondragleave="handleDragLeave('up-dropzone')" ondrop="handleDrop(event,'up')">
             <i class="fa-solid fa-cloud-arrow-up text-3xl text-red-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-600">Klik atau drag &amp; drop file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Maks. 5 file, 50MB/file</div>
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Maks. 5 file, 70MB/file</div>
             <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
           </div>
           <div id="up-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
@@ -1098,6 +1098,11 @@ function setupFileInput() {
 
 function handleFileSelect(file, prefix) {
   if (!file) return;
+  const MAX_FILE_SIZE = 70 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    showToast('error', `File "${file.name}" melebihi batas 70 MB (${(file.size/1048576).toFixed(1)} MB)`);
+    return;
+  }
   const fn = document.getElementById(prefix + '-file-name');
   fn.textContent = '📎 ' + file.name + ' (' + (file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB') + ')';
   fn.classList.remove('hidden');
@@ -1257,6 +1262,15 @@ async function handleMultiFileSelect(fileList) {
 
   // Validate total
   if (files.length > 5) { showToast('error', 'Maksimal 5 file sekaligus'); return; }
+
+  // Validasi ukuran: maksimal 70 MB per file
+  const MAX_FILE_SIZE = 70 * 1024 * 1024; // 70 MB
+  for (const f of files) {
+    if (f.size > MAX_FILE_SIZE) {
+      showToast('error', `File "${f.name}" melebihi batas 70 MB (${(f.size/1048576).toFixed(1)} MB)`);
+      return;
+    }
+  }
 
   upSelectedFiles = [];
   const strip = document.getElementById('up-multi-preview');
