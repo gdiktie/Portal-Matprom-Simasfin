@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -818,7 +819,7 @@ const BRANCHES = [
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // ── GANTI dengan URL Deploy Apps Script kamu ─────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbycgZb62H7ymSjOwDfuipha_h_FMYl8HP3JEXbGS0S-KsqQ1cU48ttv6_DrJLrllf_6AQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyPiSLtXjRz33YjGnbegNb-aggifbPB-cWToGe_AWGTx6uEMWxB_rOKePeZx_CcRaLZuQ/exec';
 // ─────────────────────────────────────────────────────────────
 
 let currentUser = null;
@@ -2492,9 +2493,9 @@ async function doUpload() {
     setProgress(btn, 93, 'Menyimpan ke server...');
     try { await apiPost('editMedia', { item: combinedItem }); } catch(e) {}
 
-    // Hapus item temporary sisa (indeks 1 ke atas)
+    // Hapus item temporary sisa dari Sheet saja (Drive TIDAK dihapus — file sudah masuk combinedItem)
     for (let i = 1; i < tempIds.length; i++) {
-      try { await apiPost('deleteMedia', { id: String(tempIds[i]) }); } catch(e) {}
+      try { await apiPost('deleteMedia', { id: String(tempIds[i]), sheetOnly: true }); } catch(e) {}
     }
 
     mediaData.unshift(combinedItem);
@@ -2682,23 +2683,12 @@ async function toggleLock(id) {
 async function deleteCard(id) {
   if (!isMarketing()) { showToast('error','Hanya Marketing yang dapat menghapus materi'); return; }
   const item = mediaData.find(d => d.id === id);
-  if (!item) return;
-  if (item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
-  if (!confirm(`Hapus materi "${item.title}"?\n\nFile di Google Drive juga akan ikut dihapus permanen.`)) return;
-
-  // Hapus dari Sheet + Drive sekaligus
-  try {
-    const payload = {
-      id       : String(id),
-      folderId : item.driveFolderId || null,
-      fileIds  : Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [],
-    };
-    await apiPost('deleteMedia', payload);
-  } catch(e) { /* tetap hapus lokal meski server error */ }
-
+  if (item && item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
+  if (!confirm('Hapus materi ini?')) return;
+  try { await apiPost('deleteMedia', { id: String(id) }); } catch(e) { /* fallback lokal */ }
   mediaData = mediaData.filter(d => d.id !== id);
   renderCards();
-  showToast('success','Materi & file Drive berhasil dihapus');
+  showToast('success','Materi berhasil dihapus');
 }
 
 // ===== DOWNLOAD ALL =====
