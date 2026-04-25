@@ -94,7 +94,7 @@
   .preview-loading { display:flex; align-items:center; justify-content:center; height:180px; color:var(--muted); font-size:.8rem; gap:8px; }
   .preview-badge { position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.65); color:#fff; font-size:.65rem; font-weight:700; border-radius:6px; padding:3px 8px; letter-spacing:.03em; }
   .btn-download { background: var(--navy); color: #fff; border-radius: 8px; padding: 8px 16px; font-size: .8rem; font-weight: 600; border: none; cursor: pointer; transition: background .15s; display: flex; align-items: center; gap: 6px; }
-  .btn-download:hover { background: var(--red); }
+  .btn-download:hover { background: #8B35CC; }
   .btn-delete { background: #fff; color: var(--red); border: 1.5px solid var(--red); border-radius: 8px; padding: 7px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px; }
   .btn-delete:hover { background: var(--red); color: #fff; }
   .btn-edit { background: #fff; color: var(--navy); border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 5px; }
@@ -2148,8 +2148,23 @@ function buildCard(item) {
   const catLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',formulir:'Formulir',video:'Video',logo:'Logo'}[item.cat] || item.cat;
   const catColor = {brosur:'bg-orange-100 text-orange-700',banner:'bg-blue-100 text-blue-700',instagram:'bg-pink-100 text-pink-700',formulir:'bg-green-100 text-green-700',video:'bg-purple-100 text-purple-700',logo:'bg-yellow-100 text-yellow-700'}[item.cat] || 'bg-gray-100 text-gray-600';
 
-  const thumbHtml = item.thumb
-    ? `<img src="${item.thumb}" alt="${item.title}" loading="lazy">
+  // Ambil Drive thumbnail URL dari fileIds, driveFolderId, atau driveUrls
+  const firstFileId = (Array.isArray(item.fileIds) && item.fileIds.length > 0)
+    ? item.fileIds[0]
+    : (() => {
+        const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0 ? item.driveUrls : (item.driveUrl ? [item.driveUrl] : []);
+        if (urls.length > 0) { const m = urls[0].match(/\/d\/([a-zA-Z0-9_-]+)/); return m ? m[1] : null; }
+        return null;
+      })();
+  const driveThumbnailUrl = item.thumb
+    ? item.thumb
+    : firstFileId
+      ? `https://drive.google.com/thumbnail?id=${firstFileId}&sz=w400`
+      : null;
+
+  const thumbHtml = driveThumbnailUrl
+    ? `<img src="${driveThumbnailUrl}" alt="${item.title}" loading="lazy"
+         onerror="this.style.display='none';this.nextElementSibling&&this.nextElementSibling.nextElementSibling?(this.nextElementSibling.style.display='flex'):(()=>{var p=document.createElement('div');p.className='thumb-placeholder';p.style.cssText='background:${item.color};width:100%;height:100%;display:flex;align-items:center;justify-content:center;';p.innerHTML='<i class=\\'fa-solid ${item.icon}\\' style=\\'color:${item.iconColor};font-size:2.8rem;opacity:.6\\'></i>';this.parentNode.insertBefore(p,this);})()">
        <div class="thumb-overlay"><i class="fa-solid fa-magnifying-glass-plus thumb-overlay-icon"></i></div>`
     : `<div class="thumb-placeholder" style="background:${item.color};width:100%;height:100%;">
          <i class="fa-solid ${item.icon}" style="color:${item.iconColor};font-size:2.8rem;opacity:.6"></i>
@@ -2171,8 +2186,8 @@ function buildCard(item) {
     : '';
 
   const dlBtn = canDl
-    ? `<button class="btn-download flex-1" onclick="downloadItem(${item.id})">
-         <i class="fa-solid fa-download"></i> Download
+    ? `<button class="btn-download flex-1" onclick="openPreview(${item.id})">
+         <i class="fa-solid fa-eye"></i> View
        </button>`
     : `<button class="btn-download-locked flex-1" disabled title="Materi dikunci oleh Marketing">
          <i class="fa-solid fa-lock"></i> Terkunci
