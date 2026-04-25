@@ -132,7 +132,7 @@
   .seg-instagram .segment-icon { background: #f3e6fa; color: #8B35CC; }
 
   /* TOAST */
-  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: #fff; border-radius: 12px; padding: 14px 22px; font-size: .875rem; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.25); z-index: 999; transform: translateY(80px); opacity: 0; transition: all .3s; display: flex; align-items: center; gap: 10px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: #fff; border-radius: 12px; padding: 14px 22px; font-size: .875rem; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.25); z-index: 9999; transform: translateY(80px); opacity: 0; transition: all .3s; display: flex; align-items: center; gap: 10px; }
   .toast.show { transform: translateY(0); opacity: 1; }
   .toast.success { border-left: 4px solid #22c55e; }
   .toast.error { border-left: 4px solid var(--red); }
@@ -1023,7 +1023,7 @@ function showLoadingOverlay(show) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'loading-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(26,35,64,.55);z-index:1100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);pointer-events:none;';
     el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div>';
     document.body.appendChild(el);
   }
