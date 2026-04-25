@@ -415,7 +415,14 @@
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
-
+      <div class="tab-group mt-5">
+        <button class="tab-btn active" id="lt-kpno" onclick="switchLoginTab('kpno')">
+          <i class="fa-solid fa-building mr-1"></i> Karyawan KPNO
+        </button>
+        <button class="tab-btn" id="lt-cabang" onclick="switchLoginTab('cabang')">
+          <i class="fa-solid fa-store mr-1"></i> Karyawan Cabang
+        </button>
+      </div>
     </div>
     <div class="modal-body">
       <div class="alert-info mb-5">
@@ -439,7 +446,6 @@
         <button class="btn-red-full" onclick="doLogin()">
           <i class="fa-solid fa-right-to-bracket mr-2"></i>Masuk
         </button>
-
       </div>
       <hr class="divider">
       <div class="text-center text-sm text-gray-500">
