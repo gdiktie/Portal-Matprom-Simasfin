@@ -434,10 +434,7 @@
         <button class="btn-red-full" onclick="doLogin()">
           <i class="fa-solid fa-right-to-bracket mr-2"></i>Masuk
         </button>
-        <button id="btn-debug-login" onclick="debugUsers()" style="width:100%;margin-top:8px;padding:8px;background:#1e293b;color:#94a3b8;border:1px dashed #334155;border-radius:8px;font-size:.75rem;cursor:pointer;">
-          <i class="fa-solid fa-bug mr-1"></i> Debug: Cek struktur data Users
-        </button>
-        <div id="debug-result" style="display:none;margin-top:10px;padding:10px;background:#0f172a;border-radius:8px;font-size:.7rem;color:#94a3b8;white-space:pre-wrap;max-height:200px;overflow:auto;text-align:left;"></div>
+
       </div>
       <hr class="divider">
       <div class="text-center text-sm text-gray-500">
@@ -811,7 +808,7 @@ const BRANCHES = [
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // ── GANTI dengan URL Deploy Apps Script kamu ─────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbwBt3UnY9WIpG2vEaH83WH4Ca4UL5pD25APztexPNQ0e1ZOn6U1jxO5RA5XIrk2vvct1g/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbycgZb62H7ymSjOwDfuipha_h_FMYl8HP3JEXbGS0S-KsqQ1cU48ttv6_DrJLrllf_6AQ/exec';
 // ─────────────────────────────────────────────────────────────
 
 let currentUser = null;
@@ -1364,7 +1361,10 @@ function removeEditPreview() {
 let previewCurrentId = null;
 let previewSlideIndex = 0;
 
-function openPreview(id) {
+// Cache file list per folderId agar tidak fetch ulang terus
+const _folderFileCache = {};
+
+async function openPreview(id) {
   const item = mediaData.find(d => d.id === id);
   if (!item) return;
   previewCurrentId = id;
@@ -1374,7 +1374,6 @@ function openPreview(id) {
 
   // ── Info col ────────────────────────────────────────────────
   document.getElementById('preview-info-title').textContent = item.title;
-
   const catLabel = {brosur:'Brosur',banner:'Banner',instagram:'Instagram',
     formulir:'Formulir',video:'Video',logo:'Logo'}[item.cat] || item.cat;
   document.getElementById('preview-info-meta').innerHTML =
@@ -1384,9 +1383,9 @@ function openPreview(id) {
     (locked ? `<span class="preview-meta-chip" style="background:rgba(251,191,36,.15);color:#fbbf24;"><i class="fa-solid fa-lock mr-1" style="font-size:.6rem;"></i>Terkunci</span>` : '');
 
   // Deskripsi
-  const descWrap  = document.getElementById('preview-desc-wrap');
-  const noDescEl  = document.getElementById('preview-nodesc');
-  const descText  = document.getElementById('preview-desc-text');
+  const descWrap = document.getElementById('preview-desc-wrap');
+  const noDescEl = document.getElementById('preview-nodesc');
+  const descText = document.getElementById('preview-desc-text');
   if (item.deskripsi && item.deskripsi.trim()) {
     descText.textContent = item.deskripsi;
     descWrap.style.display = '';
@@ -1396,55 +1395,120 @@ function openPreview(id) {
     noDescEl.style.display = '';
   }
 
-  // Tombol Unduh Materi — jaga label HTML asli, hanya ubah disabled state
-  const dlBtn  = document.getElementById('preview-dl-btn');
+  // Tombol Unduh
+  const dlBtn   = document.getElementById('preview-dl-btn');
   const lockMsg = document.getElementById('preview-locked-msg');
-  if (locked && !mkt) {
-    dlBtn.disabled = true;
-    lockMsg.style.display = '';
-  } else {
-    dlBtn.disabled = false;
-    lockMsg.style.display = 'none';
-  }
-  // Reset ke label asli (jangan override)
   dlBtn.innerHTML = `<i class="fa-solid fa-download"></i> Unduh Materi`;
+  if (locked && !mkt) { dlBtn.disabled = true; lockMsg.style.display = ''; }
+  else { dlBtn.disabled = false; lockMsg.style.display = 'none'; }
 
-  // ── Build slides array ───────────────────────────────────────
-  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
-    ? item.thumbs
-    : (item.thumb ? [item.thumb] : [null]);
-
-  renderPreviewSlide(item, slides, 0);
-  updatePreviewNav(slides);
+  // Buka overlay dulu, baru load gambar (UX lebih cepat)
   document.getElementById('preview-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+
+  // ── Ambil slides dari Drive (persistent, tidak butuh localStorage) ──
+  const slides = await buildSlides(item);
+  // Simpan di item agar previewNav bisa pakai
+  item._previewSlides = slides;
+  renderPreviewSlide(item, slides, 0);
+  updatePreviewNav(slides);
+}
+
+// Bangun array slide URL dari Drive — persistent & selalu fresh
+async function buildSlides(item) {
+  // 1. Prioritas: driveFolderId → ambil semua file dari folder
+  if (item.driveFolderId) {
+    // Gunakan cache agar tidak fetch ulang setiap buka preview
+    if (_folderFileCache[item.driveFolderId]) {
+      return _folderFileCache[item.driveFolderId];
+    }
+    // Tampilkan loading sementara
+    document.getElementById('preview-content').innerHTML =
+      `<div style="min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:rgba(255,255,255,.7)">
+        <i class="fa-solid fa-spinner fa-spin" style="font-size:2.5rem;color:#fff;"></i>
+        <span style="font-size:.85rem;">Memuat file dari Drive...</span>
+      </div>`;
+    try {
+      const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
+      if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
+        // Filter hanya file yang bisa di-preview (gambar)
+        const imageTypes = ['image/jpeg','image/png','image/gif','image/webp','image/jpg'];
+        const imgFiles   = resp.files.filter(f => imageTypes.includes(f.mimeType));
+        const allFiles   = resp.files;
+        // Buat URL thumbnail via Google Drive embed (tidak butuh auth untuk file publik)
+        const slides = (imgFiles.length > 0 ? imgFiles : allFiles).map(f =>
+          ({ type: imgFiles.includes(f) ? 'image' : 'file',
+             url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
+             viewUrl: f.url, name: f.name, id: f.id })
+        );
+        _folderFileCache[item.driveFolderId] = slides;
+        return slides;
+      }
+    } catch(e) { /* fallback ke driveUrls */ }
+  }
+
+  // 2. Fallback: driveUrls array
+  const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
+    ? item.driveUrls : (item.driveUrl ? [item.driveUrl] : []);
+  if (urls.length > 0) {
+    return urls.map(url => {
+      const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      const fid = m ? m[1] : null;
+      return { type: 'image',
+               url: fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800` : url,
+               viewUrl: url, name: item.title, id: fid };
+    }).filter(s => s.id);
+  }
+
+  // 3. Tidak ada file sama sekali
+  return [null];
 }
 
 function renderPreviewSlide(item, slides, idx) {
-  const captionEl  = document.getElementById('preview-caption');
-  const contentEl  = document.getElementById('preview-content');
+  const captionEl   = document.getElementById('preview-caption');
+  const contentEl   = document.getElementById('preview-content');
   const totalSlides = slides.length;
-  const thumb = slides[idx];
+  const slide       = slides[idx];
 
   captionEl.textContent = item.month + ' · ' + item.size +
     (totalSlides > 1 ? ` · File ${idx + 1} dari ${totalSlides}` : '');
 
-  if (thumb) {
-    contentEl.innerHTML = `<img src="${thumb}" alt="${item.title}" style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);">`;
-  } else {
-    const catColors = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
-    const catBg     = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
+  const catColors = {brosur:'#F05A28',banner:'#3b82f6',instagram:'#ec4899',formulir:'#22c55e',video:'#8B35CC',logo:'#C8922A'};
+  const catBg     = {brosur:'#fdebd0',banner:'#e8f4fd',instagram:'#fce7f3',formulir:'#f0fdf4',video:'#f5f3ff',logo:'#fef9c3'};
+
+  if (!slide) {
     contentEl.innerHTML = `
       <div class="preview-placeholder" style="background:${catBg[item.cat]||'#f5f5f5'}">
         <i class="fa-solid ${item.icon}" style="color:${catColors[item.cat]||'#888'};font-size:5rem;opacity:.7"></i>
         <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
+      </div>`;
+  } else if (slide.type === 'image') {
+    contentEl.innerHTML = `
+      <div style="position:relative;">
+        <img src="${slide.url}"
+          alt="${slide.name || item.title}"
+          style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);display:block;"
+          onerror="this.parentElement.innerHTML='<div style=\'min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:rgba(255,255,255,.6);\'><i class=\'fa-solid fa-image-slash\' style=\'font-size:3rem;\'></i><span style=\'font-size:.8rem;\'>Gagal memuat gambar</span></div>'"
+        >
+        ${slide.name ? `<div style="position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:6px;padding:3px 8px;">${slide.name}</div>` : ''}
+      </div>`;
+  } else {
+    // File non-gambar (PDF, dll)
+    contentEl.innerHTML = `
+      <div class="preview-placeholder" style="background:#1e2a45;min-height:280px;">
+        <i class="fa-solid fa-file" style="color:#94a3b8;font-size:4rem;opacity:.8"></i>
+        <span style="color:rgba(255,255,255,.7);font-size:.85rem;font-weight:600;">${slide.name}</span>
+        <a href="${slide.viewUrl}" target="_blank" rel="noopener"
+          style="background:#3b82f6;color:#fff;border-radius:8px;padding:8px 18px;font-size:.8rem;font-weight:700;text-decoration:none;margin-top:6px;">
+          <i class="fa-solid fa-external-link-alt mr-1"></i>Buka di Drive
+        </a>
       </div>`;
   }
 
   // Dots
   const dotsEl    = document.getElementById('preview-dots');
   const counterEl = document.getElementById('preview-slide-counter');
-  if (totalSlides > 1) {
+  if (totalSlides > 1 && slides[0] !== null) {
     dotsEl.style.display = 'flex';
     dotsEl.innerHTML = slides.map((_, i) =>
       `<span onclick="previewNavTo(${i})" style="width:${i===idx?'20px':'8px'};height:8px;border-radius:99px;
@@ -1461,22 +1525,16 @@ function renderPreviewSlide(item, slides, idx) {
 function updatePreviewNav(slides) {
   const prevBtn = document.getElementById('preview-prev');
   const nextBtn = document.getElementById('preview-next');
-  if (slides.length > 1) {
-    prevBtn.style.display = 'flex';
-    nextBtn.style.display = 'flex';
-  } else {
-    prevBtn.style.display = 'none';
-    nextBtn.style.display = 'none';
-  }
+  const show = slides.length > 1 && slides[0] !== null;
+  prevBtn.style.display = show ? 'flex' : 'none';
+  nextBtn.style.display = show ? 'flex' : 'none';
 }
 
 function previewNav(dir) {
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
-  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
-    ? item.thumbs
-    : (item.thumb ? [item.thumb] : [null]);
-  const total = slides.length;
+  const slides = item._previewSlides || [null];
+  const total  = slides.length;
   previewSlideIndex = (previewSlideIndex + dir + total) % total;
   renderPreviewSlide(item, slides, previewSlideIndex);
 }
@@ -1484,9 +1542,7 @@ function previewNav(dir) {
 function previewNavTo(idx) {
   const item = mediaData.find(d => d.id === previewCurrentId);
   if (!item) return;
-  const slides = Array.isArray(item.thumbs) && item.thumbs.length > 0
-    ? item.thumbs
-    : (item.thumb ? [item.thumb] : [null]);
+  const slides = item._previewSlides || [null];
   previewSlideIndex = idx;
   renderPreviewSlide(item, slides, previewSlideIndex);
 }
@@ -1742,25 +1798,6 @@ function switchRegisterTab(mode) {
 }
 
 // ===== AUTH =====
-async function debugUsers() {
-  const box = document.getElementById('debug-result');
-  box.style.display = 'block';
-  box.textContent = 'Menghubungi server...';
-  try {
-    const resp = await apiCall('debugUsers', {});
-    if (resp.ok) {
-      box.innerHTML = `<span style="color:#4ade80">✓ Sheet: ${resp.sheetName} | Total data: ${resp.totalRows} baris</span>\n` +
-        `<span style="color:#fbbf24">Header kolom:</span> ${JSON.stringify(resp.headers)}\n\n` +
-        `<span style="color:#fbbf24">Contoh data (password disensor):</span>\n` +
-        resp.sample.map((r,i) => `Baris ${i+1}: ${JSON.stringify(r)}`).join('\n');
-    } else {
-      box.innerHTML = `<span style="color:#f87171">✗ ${resp.msg}</span>`;
-    }
-  } catch(e) {
-    box.innerHTML = `<span style="color:#f87171">✗ ${e.message}</span>`;
-  }
-}
-
 async function doLogin() {
   const idcard = document.getElementById('login-idcard').value.trim();
   const pwd = document.getElementById('login-password').value;
@@ -2269,6 +2306,9 @@ async function doUpload() {
       if (!r.url) throw new Error('Server tidak mengembalikan URL file ' + (i+1));
       driveUrls.push(r.url);
       tempIds.push(tempId);
+      // Kumpulkan fileId dari setiap response server
+      if (r.fileId) window._uploadedFileIds   = (window._uploadedFileIds   || []).concat(r.fileId);
+      if (r.fileName) window._uploadedFileNames = (window._uploadedFileNames || []).concat(r.fileName);
       // Selalu update folderId — semua file masuk folder yang sama
       if (r.folderId) window._lastFolderId = r.folderId;
       if (thumbDataUrl) thumbs.push(thumbDataUrl);
@@ -2279,23 +2319,27 @@ async function doUpload() {
     const sizeLabel = totalSize > 1048576
       ? (totalSize/1048576).toFixed(1)+' MB' : Math.round(totalSize/1024)+' KB';
 
+    const uploadedFileIds   = window._uploadedFileIds   || [];
+    const uploadedFileNames = window._uploadedFileNames || [];
+    window._uploadedFileIds = null;
+    window._uploadedFileNames = null;
+
     const combinedItem = {
-      id       : tempIds[0],
-      title    : judul,
-      cat      : kat, segment: segMap[kat]||kat, month: bulan, isNew,
-      icon     : iconMap[kat]||'fa-file',
-      color    : colorMap[kat]||'#f5f5f5',
-      iconColor: icMap[kat]||'#888',
-      size     : totalFiles > 1 ? `${totalFiles} file · ${sizeLabel}` : sizeLabel,
-      thumb    : thumbs[0] || null,
-      thumbs   : thumbs,
-      driveUrl : driveUrls[0] || null,
-      // driveUrls sebagai array — Apps Script harus simpan sebagai JSON string ke Sheets
-      driveUrls: driveUrls,
-      driveUrlsJson: JSON.stringify(driveUrls),
-      driveFolderId: window._lastFolderId || null,
-      deskripsi: deskripsi || '',
-      locked   : isLocked,
+      id            : tempIds[0],
+      title         : judul,
+      cat           : kat, segment: segMap[kat]||kat, month: bulan, isNew,
+      icon          : iconMap[kat]||'fa-file',
+      color         : colorMap[kat]||'#f5f5f5',
+      iconColor     : icMap[kat]||'#888',
+      size          : totalFiles > 1 ? `${totalFiles} file · ${sizeLabel}` : sizeLabel,
+      driveUrl      : driveUrls[0] || null,
+      driveUrls     : driveUrls,
+      driveFolderId : window._lastFolderId || null,
+      fileIds       : uploadedFileIds,
+      fileNames     : uploadedFileNames,
+      deskripsi     : deskripsi || '',
+      locked        : isLocked,
+      uploadedBy    : currentUser ? currentUser.idcard4 : '',
     };
     window._lastFolderId = null;
 
