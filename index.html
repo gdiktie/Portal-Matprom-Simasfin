@@ -1438,18 +1438,6 @@ async function openPreview(id) {
   updatePreviewNav(slides);
 }
 
-// Deteksi tipe slide dari mimeType atau nama file
-function detectSlideType(mimeType, name) {
-  const mime = (mimeType || '').toLowerCase();
-  const ext  = (name || '').split('.').pop().toLowerCase();
-  if (['image/jpeg','image/png','image/gif','image/webp','image/jpg'].includes(mime) ||
-      ['jpg','jpeg','png','gif','webp'].includes(ext)) return 'image';
-  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
-  if (['video/mp4','video/quicktime','video/webm','video/avi'].includes(mime) ||
-      ['mp4','mov','webm','avi'].includes(ext)) return 'video';
-  return 'file';
-}
-
 // Bangun array slide URL dari Drive — persistent & selalu fresh
 async function buildSlides(item) {
   // 1. Prioritas: driveFolderId → ambil semua file dari folder
@@ -1467,38 +1455,16 @@ async function buildSlides(item) {
     try {
       const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
       if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
-        // Urutkan file sesuai urutan upload (fileIds dari sheet = urutan asli)
-        const uploadedIds = Array.isArray(item.fileIds) && item.fileIds.length > 0
-          ? item.fileIds : [];
-        let orderedFiles;
-        if (uploadedIds.length > 0) {
-          // Susun ulang: file yang ada di fileIds dulu (sesuai urutan), sisanya di belakang
-          const inOrder  = uploadedIds
-            .map(fid => resp.files.find(f => f.id === fid))
-            .filter(Boolean);
-          const leftover = resp.files.filter(f => !uploadedIds.includes(f.id));
-          orderedFiles   = [...inOrder, ...leftover];
-        } else {
-          orderedFiles = resp.files;
-        }
-
-        const uploadedNames = Array.isArray(item.fileNames) ? item.fileNames : [];
-        const slides = orderedFiles.map((f, i) => {
-          const type = detectSlideType(f.mimeType, f.name);
-          // Pakai nama dari fileNames jika tersedia (lebih akurat dari nama Drive)
-          const fidIdx = uploadedIds.indexOf(f.id);
-          const name   = (fidIdx !== -1 && uploadedNames[fidIdx]) ? uploadedNames[fidIdx] : f.name;
-          return {
-            type,
-            url    : type === 'image'
-                       ? `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`
-                       : `https://drive.google.com/file/d/${f.id}/preview`,
-            viewUrl: f.url,
-            name,
-            id     : f.id,
-            mimeType: f.mimeType,
-          };
-        });
+        // Filter hanya file yang bisa di-preview (gambar)
+        const imageTypes = ['image/jpeg','image/png','image/gif','image/webp','image/jpg'];
+        const imgFiles   = resp.files.filter(f => imageTypes.includes(f.mimeType));
+        const allFiles   = resp.files;
+        // Buat URL thumbnail via Google Drive embed (tidak butuh auth untuk file publik)
+        const slides = (imgFiles.length > 0 ? imgFiles : allFiles).map(f =>
+          ({ type: imgFiles.includes(f) ? 'image' : 'file',
+             url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
+             viewUrl: f.url, name: f.name, id: f.id })
+        );
         _folderFileCache[item.driveFolderId] = slides;
         return slides;
       }
@@ -1509,38 +1475,26 @@ async function buildSlides(item) {
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls : (item.driveUrl ? [item.driveUrl] : []);
   if (urls.length > 0) {
-    const names = Array.isArray(item.fileNames) ? item.fileNames : [];
-    return urls.map((url, i) => {
-      const m    = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      const fid  = m ? m[1] : null;
-      const name = names[i] || item.title;
-      const type = detectSlideType(null, name);
-      return {
-        type,
-        url    : fid ? (type === 'image'
-                   ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800`
-                   : `https://drive.google.com/file/d/${fid}/preview`) : url,
-        viewUrl: url, name, id: fid,
-      };
+    return urls.map(url => {
+      const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      const fid = m ? m[1] : null;
+      return { type: 'image',
+               url: fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800` : url,
+               viewUrl: url, name: item.title, id: fid };
     }).filter(s => s.id);
   }
 
-  // 3. fileIds dari sheet — fallback sebelum null (urutan upload sudah terjaga)
+  // 3. fileIds dari sheet — fallback sebelum null
   const fids = Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [];
   if (fids.length > 0) {
     const names = Array.isArray(item.fileNames) ? item.fileNames : [];
-    return fids.map((fid, i) => {
-      const name = names[i] || (fids.length > 1 ? `File ${i+1}` : item.title);
-      const type = detectSlideType(null, name);
-      return {
-        type,
-        url    : type === 'image'
-                   ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800`
-                   : `https://drive.google.com/file/d/${fid}/preview`,
-        viewUrl: `https://drive.google.com/file/d/${fid}/view`,
-        name, id: fid,
-      };
-    });
+    return fids.map((fid, i) => ({
+      type   : 'image',
+      url    : `https://drive.google.com/thumbnail?id=${fid}&sz=w800`,
+      viewUrl: `https://drive.google.com/file/d/${fid}/view`,
+      name   : names[i] || (fids.length > 1 ? `File ${i+1}` : item.title),
+      id     : fid,
+    }));
   }
 
   // 4. Tidak ada file sama sekali
@@ -1576,68 +1530,16 @@ function renderPreviewSlide(item, slides, idx) {
         ${slide.name ? `<div style="position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:6px;padding:3px 8px;letter-spacing:.03em;">${slide.name}</div>` : ''}
         ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
       </div>`;
-  } else if (slide.type === 'pdf') {
-    // ── PDF — Google Drive iframe viewer ─────────────────────────
+    } else {
+    // File non-gambar (PDF, dll)
     contentEl.innerHTML = `
-      <div style="position:relative;border-radius:14px;overflow:hidden;background:#1e2a45;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <iframe src="${slide.url}"
-          style="width:100%;height:58vh;border:none;display:block;"
-          allow="autoplay" loading="lazy"
-          title="${slide.name || item.title}"></iframe>
-        ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#162032;">
-          <span style="color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <i class="fa-solid fa-file-pdf" style="color:#ef4444;font-size:1rem;flex-shrink:0;"></i>${slide.name || item.title}
-          </span>
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="flex-shrink:0;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:5px 12px;font-size:.68rem;font-weight:700;text-decoration:none;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
-          </a>
-        </div>
-      </div>`;
-
-  } else if (slide.type === 'video') {
-    // ── Video — Google Drive video player ────────────────────────
-    contentEl.innerHTML = `
-      <div style="border-radius:14px;overflow:hidden;background:#000;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <iframe src="${slide.url}"
-          style="width:100%;height:55vh;border:none;display:block;"
-          allow="autoplay" allowfullscreen loading="lazy"
-          title="${slide.name || item.title}"></iframe>
-        ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;">
-          <span style="color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <i class="fa-solid fa-film" style="color:#a78bfa;font-size:1rem;flex-shrink:0;"></i>${slide.name || item.title}
-          </span>
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="flex-shrink:0;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:5px 12px;font-size:.68rem;font-weight:700;text-decoration:none;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
-          </a>
-        </div>
-      </div>`;
-
-  } else {
-    // ── File lain (xlsx, docx, zip, dll) — ikon besar + tombol ──
-    const extIconMap = {xlsx:'fa-file-excel',xls:'fa-file-excel',docx:'fa-file-word',doc:'fa-file-word',
-      pptx:'fa-file-powerpoint',ppt:'fa-file-powerpoint',zip:'fa-file-zipper',rar:'fa-file-zipper',txt:'fa-file-lines'};
-    const extColorMap = {xlsx:'#1D6F42',xls:'#1D6F42',docx:'#2B5797',doc:'#2B5797',
-      pptx:'#C43E1C',ppt:'#C43E1C',zip:'#F59E0B',rar:'#F59E0B'};
-    const ext      = (slide.name||'').split('.').pop().toLowerCase();
-    const extIcon  = extIconMap[ext]  || 'fa-file';
-    const extColor = extColorMap[ext] || '#94a3b8';
-    contentEl.innerHTML = `
-      <div style="border-radius:14px;overflow:hidden;background:#1e2a45;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <div style="min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px 24px;">
-          <i class="fa-solid ${extIcon}" style="font-size:5rem;color:${extColor};opacity:.9;"></i>
-          <span style="color:rgba(255,255,255,.85);font-size:.9rem;font-weight:700;text-align:center;word-break:break-all;">${slide.name||item.title}</span>
-          ${totalSlides > 1 ? `<span style="color:rgba(255,255,255,.4);font-size:.7rem;">${idx+1} / ${totalSlides}</span>` : ''}
-        </div>
-        <div style="display:flex;padding:0 20px 20px;justify-content:center;">
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="background:#3b82f6;color:#fff;border-radius:8px;padding:10px 22px;font-size:.8rem;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:8px;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i>Buka di Drive
-          </a>
-        </div>
+      <div class="preview-placeholder" style="background:#1e2a45;min-height:280px;">
+        <i class="fa-solid fa-file" style="color:#94a3b8;font-size:4rem;opacity:.8"></i>
+        <span style="color:rgba(255,255,255,.7);font-size:.85rem;font-weight:600;">${slide.name}</span>
+        <a href="${slide.viewUrl}" target="_blank" rel="noopener"
+          style="background:#3b82f6;color:#fff;border-radius:8px;padding:8px 18px;font-size:.8rem;font-weight:700;text-decoration:none;margin-top:6px;">
+          <i class="fa-solid fa-external-link-alt mr-1"></i>Buka di Drive
+        </a>
       </div>`;
   }
 
@@ -2780,12 +2682,26 @@ async function toggleLock(id) {
 async function deleteCard(id) {
   if (!isMarketing()) { showToast('error','Hanya Marketing yang dapat menghapus materi'); return; }
   const item = mediaData.find(d => d.id === id);
-  if (item && item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
-  if (!confirm('Hapus materi ini?')) return;
-  try { await apiPost('deleteMedia', { id: String(id) }); } catch(e) { /* fallback lokal */ }
+  if (!item) return;
+  if (item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
+
+  if (!confirm(`Hapus "${item.title}"?\n\nFile di Google Drive juga akan ikut dihapus permanen.`)) return;
+
+  try {
+    await apiPost('deleteMedia', {
+      id       : String(id),
+      folderId : item.driveFolderId || null,
+      fileIds  : Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [],
+      sheetOnly: false,   // hapus Drive + Sheet
+    });
+  } catch(e) {
+    // Tetap hapus dari tampilan meski server error
+    console.warn('deleteMedia server error:', e.message);
+  }
+
   mediaData = mediaData.filter(d => d.id !== id);
   renderCards();
-  showToast('success','Materi berhasil dihapus');
+  showToast('success', `"${item.title}" berhasil dihapus`);
 }
 
 // ===== DOWNLOAD ALL =====
