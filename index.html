@@ -427,12 +427,12 @@
     <div class="modal-body">
       <div class="alert-info mb-5">
         <i class="fa-solid fa-circle-info mr-1"></i>
-        Gunakan <strong>4 digit pertama</strong> dari No. ID Card Anda (8 digit) untuk login.
+        Gunakan <strong>No. ID Card 8 digit</strong> yang terdaftar untuk login.
       </div>
       <div class="space-y-4">
         <div>
-          <label class="input-label">No. ID Card (4 Digit Pertama)</label>
-          <input type="text" id="login-idcard" placeholder="Contoh: 1234" maxlength="4" class="input-field" oninput="this.value=this.value.replace(/\D/g,'')">
+          <label class="input-label">No. ID Card (8 Digit)</label>
+          <input type="text" id="login-idcard" placeholder="Contoh: 12345678" maxlength="8" class="input-field" oninput="this.value=this.value.replace(/\D/g,'')">
         </div>
         <div>
           <label class="input-label">Password</label>
@@ -1914,7 +1914,7 @@ function switchRegisterTab(mode) {
 async function doLogin() {
   const idcard = document.getElementById('login-idcard').value.trim();
   const pwd = document.getElementById('login-password').value;
-  if (!idcard || idcard.length !== 4) { showToast('error', 'Masukkan 4 digit pertama ID Card'); return; }
+  if (!idcard || idcard.length !== 8) { showToast('error', 'Masukkan No. ID Card 8 digit'); return; }
   if (!pwd) { showToast('error', 'Password tidak boleh kosong'); return; }
 
   const btnLogin = document.querySelector('#modal-login .btn-red-full');
@@ -1922,7 +1922,7 @@ async function doLogin() {
   btnLogin.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Memeriksa...';
 
   try {
-    const resp = await apiCall('login', { idcard4: idcard, password: pwd, role: loginTabMode });
+    const resp = await apiCall('login', { idcard4: idcard.substring(0, 4), idcard8: idcard, password: pwd, role: loginTabMode });
     if (resp.ok) {
       currentUser = resp.user;
       sessionStorage.setItem('sm_user', JSON.stringify(resp.user));
