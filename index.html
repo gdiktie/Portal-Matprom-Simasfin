@@ -63,7 +63,7 @@
   .media-card { background: #fff; border-radius: 16px; border: 1.5px solid var(--border); overflow: hidden; transition: transform .2s, box-shadow .2s; }
   .media-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(26,35,64,.12); }
   .card-thumb { height: 180px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; cursor: pointer; }
-  .card-thumb img { width:100%; height:100%; object-fit:cover; transition: transform .35s ease; display:block; }
+  .card-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition: transform .35s ease; display:block; }
   .card-thumb:hover img { transform: scale(1.06); }
   .card-thumb .thumb-overlay { position:absolute; inset:0; background:rgba(26,35,64,0); display:flex; align-items:center; justify-content:center; transition: background .25s; }
   .card-thumb:hover .thumb-overlay { background:rgba(26,35,64,.45); }
@@ -79,8 +79,6 @@
   .preview-overlay.open { opacity:1; pointer-events:all; }
   .preview-inner { position:relative; max-width:840px; width:100%; }
   .preview-inner img { width:100%; border-radius:14px; box-shadow:0 24px 80px rgba(0,0,0,.6); max-height:82vh; object-fit:contain; }
-  .preview-close { position:absolute; top:-14px; right:-14px; background:#fff; border:none; border-radius:99px; width:36px; height:36px; font-size:1rem; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 16px rgba(0,0,0,.3); color:var(--navy); transition: transform .15s; }
-  .preview-close:hover { transform:scale(1.1); }
   .preview-caption { color:rgba(255,255,255,.8); text-align:center; margin-top:14px; font-size:.9rem; font-weight:600; }
   .preview-placeholder { background:#1e2a45; border-radius:14px; min-height:320px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
   .preview-placeholder i { font-size:4rem; }
@@ -748,10 +746,19 @@
 
 <!-- ===== IMAGE PREVIEW OVERLAY ===== -->
 <div class="preview-overlay" id="preview-overlay" onclick="closePreview(event)">
+  <!-- Tombol close — fixed di atas overlay, selalu di depan -->
+  <button onclick="event.stopPropagation();closePreviewBtn()"
+    style="position:fixed;top:18px;right:18px;z-index:9999;background:#fff;border:none;
+           border-radius:99px;width:42px;height:42px;font-size:1.1rem;cursor:pointer;
+           display:flex;align-items:center;justify-content:center;
+           box-shadow:0 4px 20px rgba(0,0,0,.35);color:var(--navy);transition:transform .15s,box-shadow .15s;"
+    onmouseover="this.style.transform='scale(1.12)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.45)'"
+    onmouseout="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(0,0,0,.35)'">
+    <i class="fa-solid fa-xmark"></i>
+  </button>
   <div class="preview-inner">
     <!-- Kolom kiri: gambar/thumbnail + panah carousel di dalam -->
     <div class="preview-media-col" style="position:relative;">
-      <button class="preview-close" onclick="closePreviewBtn()"><i class="fa-solid fa-xmark"></i></button>
       <!-- Panah KIRI — di dalam area gambar, gaya Instagram -->
       <button id="preview-prev" onclick="event.stopPropagation();previewNav(-1)" title="Sebelumnya"
         style="position:absolute;left:10px;top:45%;transform:translateY(-50%);z-index:20;
