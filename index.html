@@ -621,8 +621,8 @@
           <div class="upload-zone" id="up-dropzone" onclick="document.getElementById('up-file').click()" ondragover="handleDragOver(event,'up-dropzone')" ondragleave="handleDragLeave('up-dropzone')" ondrop="handleDrop(event,'up')">
             <i class="fa-solid fa-cloud-arrow-up text-3xl text-red-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-600">Klik atau drag &amp; drop file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Maks. 5 file, 50MB/file</div>
-            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, ZIP, DOC, XLS, PPT · Maks. 5 file, 70MB/file</div>
+            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
           </div>
           <div id="up-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -701,8 +701,8 @@
           <div class="upload-zone" id="edit-dropzone" onclick="document.getElementById('edit-file').click()" ondragover="handleDragOver(event,'edit-dropzone')" ondragleave="handleDragLeave('edit-dropzone')" ondrop="handleDrop(event,'edit')">
             <i class="fa-solid fa-arrow-up-from-bracket text-2xl text-gray-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-500">Klik atau drag &amp; drop untuk ganti file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, ZIP, DOC, XLS, PPT · Biarkan kosong jika tidak ingin mengganti</div>
-            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, ZIP, DOC, XLS, PPT · Biarkan kosong jika tidak ingin mengganti</div>
+            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
           </div>
           <div id="edit-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -1106,7 +1106,8 @@ function handleFileSelect(file, prefix) {
   const previewImg = document.getElementById(prefix + '-img-preview');
 
   const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
-  const isPDF = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const isPDF   = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|avi)$/i.test(file.name);
 
   if (isImage) {
     // Show image preview
@@ -1135,6 +1136,19 @@ function handleFileSelect(file, prefix) {
     };
     reader.readAsDataURL(file);
 
+  } else if (isVideo) {
+    // Preview video langsung dengan <video> tag
+    fn.textContent = '🎬 ' + file.name + ' (' + (file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB') + ')';
+    const previewBox = fn.closest('.upload-preview-box') || fn.parentElement;
+    const existVid = previewBox.querySelector('video.edit-video-preview');
+    if (existVid) existVid.remove();
+    const vidEl = document.createElement('video');
+    vidEl.className = 'edit-video-preview';
+    vidEl.src = URL.createObjectURL(file);
+    vidEl.controls = true; vidEl.muted = true; vidEl.playsInline = true;
+    vidEl.style.cssText = 'width:100%;max-height:200px;border-radius:8px;margin-top:8px;display:block;';
+    fn.after(vidEl);
+    return;
   } else if (isPDF) {
     // Show PDF first page as preview
     previewImg.style.display = 'none';
@@ -1281,6 +1295,7 @@ async function handleMultiFileSelect(fileList) {
     const file = files[idx];
     const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
     const isPDF   = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|avi)$/i.test(file.name);
     const isWord  = /\.(doc|docx)$/i.test(file.name);
     const isExcel = /\.(xls|xlsx)$/i.test(file.name);
     const isPPT   = /\.(ppt|pptx)$/i.test(file.name);
@@ -1305,9 +1320,29 @@ async function handleMultiFileSelect(fileList) {
           thumbDataUrl = canvas.toDataURL('image/jpeg', 0.8);
         }
       } catch(e) { /* no thumb for PDF */ }
+    } else if (isVideo) {
+      // Ambil frame pertama video sebagai thumbnail
+      try {
+        thumbDataUrl = await new Promise(resolve => {
+          const url = URL.createObjectURL(file);
+          const vid = document.createElement('video');
+          vid.src = url; vid.muted = true; vid.playsInline = true;
+          vid.addEventListener('loadeddata', () => { vid.currentTime = 0.5; });
+          vid.addEventListener('seeked', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 320; canvas.height = 180;
+            canvas.getContext('2d').drawImage(vid, 0, 0, 320, 180);
+            URL.revokeObjectURL(url);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          });
+          vid.addEventListener('error', () => { URL.revokeObjectURL(url); resolve(null); });
+          vid.load();
+          setTimeout(() => resolve(null), 5000); // timeout 5 detik
+        });
+      } catch(e) { /* no thumb */ }
     }
 
-    const fileType = isImage ? 'image' : isPDF ? 'pdf' : isWord ? 'word' : isExcel ? 'excel' : isPPT ? 'ppt' : 'other';
+    const fileType = isImage ? 'image' : isPDF ? 'pdf' : isVideo ? 'video' : isWord ? 'word' : isExcel ? 'excel' : isPPT ? 'ppt' : 'other';
     upSelectedFiles.push({ file, thumbDataUrl, type: fileType });
 
     // Update slot thumbnail
@@ -1331,11 +1366,15 @@ function buildSlotHtml(file, thumbDataUrl, fileType, idx) {
     excel : { icon: 'fa-file-excel',       color: '#1a7a3b', bg: '#e6f4ec' },
     ppt   : { icon: 'fa-file-powerpoint',  color: '#c8390c', bg: '#fce9e4' },
     image : { icon: 'fa-image',            color: '#8B35CC', bg: '#f3e6fa' },
+    video : { icon: 'fa-circle-play',      color: '#a78bfa', bg: '#2e1065' },
     other : { icon: 'fa-file',             color: 'var(--muted)', bg: 'var(--bg)' },
   };
   const ts = typeStyles[fileType] || typeStyles.other;
   const inner = thumbDataUrl
-    ? `<img src="${thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">`
+    ? `<div style="position:relative;width:100%;height:100%;">
+         <img src="${thumbDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;">
+         ${fileType === 'video' ? '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);"><i class=\"fa-solid fa-circle-play\" style=\"font-size:1.6rem;color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));\"></i></div>' : ''}
+       </div>`
     : `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;height:100%;
                    background:${ts.bg};justify-content:center;">
          <i class="fa-solid ${ts.icon}" style="color:${ts.color};font-size:1.4rem;"></i>
@@ -1439,22 +1478,14 @@ async function openPreview(id) {
 }
 
 // Bangun array slide URL dari Drive — persistent & selalu fresh
-// Deteksi tipe slide dari mimeType atau ekstensi nama file
-function detectSlideType(mimeType, name) {
-  const mime = (mimeType || '').toLowerCase();
-  const ext  = (name || '').split('.').pop().toLowerCase();
-  if (['image/jpeg','image/png','image/gif','image/webp','image/jpg'].includes(mime) ||
-      ['jpg','jpeg','png','gif','webp'].includes(ext)) return 'image';
-  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
-  if (['video/mp4','video/quicktime','video/webm','video/avi'].includes(mime) ||
-      ['mp4','mov','webm','avi'].includes(ext)) return 'video';
-  return 'file';
-}
-
 async function buildSlides(item) {
-  // 1. Prioritas: driveFolderId → ambil semua file dari folder, urutkan sesuai upload
+  // 1. Prioritas: driveFolderId → ambil semua file dari folder
   if (item.driveFolderId) {
-    if (_folderFileCache[item.driveFolderId]) return _folderFileCache[item.driveFolderId];
+    // Gunakan cache agar tidak fetch ulang setiap buka preview
+    if (_folderFileCache[item.driveFolderId]) {
+      return _folderFileCache[item.driveFolderId];
+    }
+    // Tampilkan loading sementara
     document.getElementById('preview-content').innerHTML =
       `<div style="min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:rgba(255,255,255,.7)">
         <i class="fa-solid fa-spinner fa-spin" style="font-size:2.5rem;color:#fff;"></i>
@@ -1463,70 +1494,46 @@ async function buildSlides(item) {
     try {
       const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
       if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
-        const uploadedIds   = Array.isArray(item.fileIds)   ? item.fileIds   : [];
-        const uploadedNames = Array.isArray(item.fileNames) ? item.fileNames : [];
-        let orderedFiles;
-        if (uploadedIds.length > 0) {
-          const inOrder  = uploadedIds.map(fid => resp.files.find(f => f.id === fid)).filter(Boolean);
-          const leftover = resp.files.filter(f => !uploadedIds.includes(f.id));
-          orderedFiles   = [...inOrder, ...leftover];
-        } else {
-          orderedFiles = resp.files;
-        }
-        const slides = orderedFiles.map(f => {
-          const type   = detectSlideType(f.mimeType, f.name);
-          const fidIdx = uploadedIds.indexOf(f.id);
-          const name   = (fidIdx !== -1 && uploadedNames[fidIdx]) ? uploadedNames[fidIdx] : f.name;
-          return {
-            type,
-            url    : type === 'image'
-                       ? `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`
-                       : `https://drive.google.com/file/d/${f.id}/preview`,
-            viewUrl: f.url, name, id: f.id, mimeType: f.mimeType,
-          };
-        });
+        // Filter hanya file yang bisa di-preview (gambar)
+        const imageTypes = ['image/jpeg','image/png','image/gif','image/webp','image/jpg'];
+        const imgFiles   = resp.files.filter(f => imageTypes.includes(f.mimeType));
+        const allFiles   = resp.files;
+        // Buat URL thumbnail via Google Drive embed (tidak butuh auth untuk file publik)
+        const slides = (imgFiles.length > 0 ? imgFiles : allFiles).map(f =>
+          ({ type: imgFiles.includes(f) ? 'image' : 'file',
+             url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
+             viewUrl: f.url, name: f.name, id: f.id })
+        );
         _folderFileCache[item.driveFolderId] = slides;
         return slides;
       }
-    } catch(e) { /* fallback */ }
+    } catch(e) { /* fallback ke driveUrls */ }
   }
 
   // 2. Fallback: driveUrls array
   const urls = Array.isArray(item.driveUrls) && item.driveUrls.length > 0
     ? item.driveUrls : (item.driveUrl ? [item.driveUrl] : []);
-  const urlNames = Array.isArray(item.fileNames) ? item.fileNames : [];
   if (urls.length > 0) {
-    return urls.map((url, i) => {
-      const m    = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-      const fid  = m ? m[1] : null;
-      const name = urlNames[i] || item.title;
-      const type = detectSlideType(null, name);
-      return {
-        type,
-        url    : fid ? (type === 'image'
-                   ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800`
-                   : `https://drive.google.com/file/d/${fid}/preview`) : url,
-        viewUrl: url, name, id: fid,
-      };
+    return urls.map(url => {
+      const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      const fid = m ? m[1] : null;
+      return { type: 'image',
+               url: fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800` : url,
+               viewUrl: url, name: item.title, id: fid };
     }).filter(s => s.id);
   }
 
-  // 3. fileIds dari sheet — urutan upload sudah terjaga
+  // 3. fileIds dari sheet — fallback sebelum null
   const fids = Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [];
   if (fids.length > 0) {
     const names = Array.isArray(item.fileNames) ? item.fileNames : [];
-    return fids.map((fid, i) => {
-      const name = names[i] || (fids.length > 1 ? `File ${i+1}` : item.title);
-      const type = detectSlideType(null, name);
-      return {
-        type,
-        url    : type === 'image'
-                   ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800`
-                   : `https://drive.google.com/file/d/${fid}/preview`,
-        viewUrl: `https://drive.google.com/file/d/${fid}/view`,
-        name, id: fid,
-      };
-    });
+    return fids.map((fid, i) => ({
+      type   : 'image',
+      url    : `https://drive.google.com/thumbnail?id=${fid}&sz=w800`,
+      viewUrl: `https://drive.google.com/file/d/${fid}/view`,
+      name   : names[i] || (fids.length > 1 ? `File ${i+1}` : item.title),
+      id     : fid,
+    }));
   }
 
   // 4. Tidak ada file sama sekali
@@ -1552,75 +1559,26 @@ function renderPreviewSlide(item, slides, idx) {
         <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
       </div>`;
   } else if (slide.type === 'image') {
-    // ── Gambar ──────────────────────────────────────────────────
     contentEl.innerHTML = `
       <div style="position:relative;border-radius:14px;overflow:hidden;">
-        <img src="${slide.url}" alt="${slide.name || item.title}"
+        <img src="${slide.url}"
+          alt="${slide.name || item.title}"
           style="width:100%;border-radius:14px;max-height:55vh;object-fit:contain;box-shadow:0 24px 80px rgba(0,0,0,.6);display:block;"
-          onerror="this.src='';this.parentElement.innerHTML='<div style=\'min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:rgba(255,255,255,.6);background:#1e2a45;border-radius:14px;\'><i class=\'fa-solid fa-image-slash\' style=\'font-size:3rem;\'></i><span style=\'font-size:.8rem;\'>Gagal memuat gambar</span></div>'"
+          onerror="this.parentElement.innerHTML='<div style=\'min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:rgba(255,255,255,.6);background:#1e2a45;border-radius:14px;\'><i class=\'fa-solid fa-image-slash\' style=\'font-size:3rem;\'></i><span style=\'font-size:.8rem;\'>Gagal memuat gambar</span></div>'"
         >
         ${slide.name ? `<div style="position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:6px;padding:3px 8px;letter-spacing:.03em;">${slide.name}</div>` : ''}
         ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
       </div>`;
-
-  } else if (slide.type === 'pdf') {
-    // ── PDF — Google Drive iframe viewer ────────────────────────
+    } else {
+    // File non-gambar (PDF, dll)
     contentEl.innerHTML = `
-      <div style="border-radius:14px;overflow:hidden;background:#1e2a45;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <iframe src="${slide.url}" style="width:100%;height:58vh;border:none;display:block;"
-          allow="autoplay" loading="lazy" title="${slide.name || item.title}"></iframe>
-        ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#162032;">
-          <span style="color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <i class="fa-solid fa-file-pdf" style="color:#ef4444;font-size:1rem;flex-shrink:0;"></i>${slide.name || item.title}
-          </span>
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="flex-shrink:0;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:5px 12px;font-size:.68rem;font-weight:700;text-decoration:none;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
-          </a>
-        </div>
-      </div>`;
-
-  } else if (slide.type === 'video') {
-    // ── Video — Google Drive video player ───────────────────────
-    contentEl.innerHTML = `
-      <div style="border-radius:14px;overflow:hidden;background:#000;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <iframe src="${slide.url}" style="width:100%;height:55vh;border:none;display:block;"
-          allow="autoplay" allowfullscreen loading="lazy" title="${slide.name || item.title}"></iframe>
-        ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;">
-          <span style="color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;gap:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <i class="fa-solid fa-film" style="color:#a78bfa;font-size:1rem;flex-shrink:0;"></i>${slide.name || item.title}
-          </span>
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="flex-shrink:0;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:5px 12px;font-size:.68rem;font-weight:700;text-decoration:none;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Buka
-          </a>
-        </div>
-      </div>`;
-
-  } else {
-    // ── File lain (xlsx, docx, zip, dll) ────────────────────────
-    const extIconMap  = {xlsx:'fa-file-excel',xls:'fa-file-excel',docx:'fa-file-word',doc:'fa-file-word',
-      pptx:'fa-file-powerpoint',ppt:'fa-file-powerpoint',zip:'fa-file-zipper',rar:'fa-file-zipper',txt:'fa-file-lines'};
-    const extColorMap = {xlsx:'#1D6F42',xls:'#1D6F42',docx:'#2B5797',doc:'#2B5797',
-      pptx:'#C43E1C',ppt:'#C43E1C',zip:'#F59E0B',rar:'#F59E0B'};
-    const ext      = (slide.name||'').split('.').pop().toLowerCase();
-    const extIcon  = extIconMap[ext]  || 'fa-file';
-    const extColor = extColorMap[ext] || '#94a3b8';
-    contentEl.innerHTML = `
-      <div style="border-radius:14px;overflow:hidden;background:#1e2a45;box-shadow:0 24px 80px rgba(0,0,0,.6);">
-        <div style="min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px 24px;">
-          <i class="fa-solid ${extIcon}" style="font-size:5rem;color:${extColor};opacity:.9;"></i>
-          <span style="color:rgba(255,255,255,.85);font-size:.9rem;font-weight:700;text-align:center;word-break:break-all;">${slide.name||item.title}</span>
-          ${totalSlides > 1 ? `<span style="color:rgba(255,255,255,.4);font-size:.7rem;">${idx+1} / ${totalSlides}</span>` : ''}
-        </div>
-        <div style="display:flex;padding:0 20px 20px;justify-content:center;">
-          <a href="${slide.viewUrl}" target="_blank" rel="noopener"
-            style="background:#3b82f6;color:#fff;border-radius:8px;padding:10px 22px;font-size:.8rem;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:8px;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i>Buka di Drive
-          </a>
-        </div>
+      <div class="preview-placeholder" style="background:#1e2a45;min-height:280px;">
+        <i class="fa-solid fa-file" style="color:#94a3b8;font-size:4rem;opacity:.8"></i>
+        <span style="color:rgba(255,255,255,.7);font-size:.85rem;font-weight:600;">${slide.name}</span>
+        <a href="${slide.viewUrl}" target="_blank" rel="noopener"
+          style="background:#3b82f6;color:#fff;border-radius:8px;padding:8px 18px;font-size:.8rem;font-weight:700;text-decoration:none;margin-top:6px;">
+          <i class="fa-solid fa-external-link-alt mr-1"></i>Buka di Drive
+        </a>
       </div>`;
   }
 
