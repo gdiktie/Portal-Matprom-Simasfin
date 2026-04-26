@@ -621,8 +621,8 @@
           <div class="upload-zone" id="up-dropzone" onclick="document.getElementById('up-file').click()" ondragover="handleDragOver(event,'up-dropzone')" ondragleave="handleDragLeave('up-dropzone')" ondrop="handleDrop(event,'up')">
             <i class="fa-solid fa-cloud-arrow-up text-3xl text-red-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-600">Klik atau drag &amp; drop file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, ZIP, DOC, XLS, PPT · Maks. 5 file, 70MB/file · RAR tidak diizinkan</div>
-            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, DOC, XLS, PPT · Maks. 5 file, 70MB/file</div>
+            <input type="file" id="up-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple>
           </div>
           <div id="up-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -701,8 +701,8 @@
           <div class="upload-zone" id="edit-dropzone" onclick="document.getElementById('edit-file').click()" ondragover="handleDragOver(event,'edit-dropzone')" ondragleave="handleDragLeave('edit-dropzone')" ondrop="handleDrop(event,'edit')">
             <i class="fa-solid fa-arrow-up-from-bracket text-2xl text-gray-300 mb-2 block"></i>
             <div class="text-sm font-semibold text-gray-500">Klik atau drag &amp; drop untuk ganti file</div>
-            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, ZIP, DOC, XLS, PPT · Biarkan kosong jika tidak ingin mengganti · RAR tidak diizinkan</div>
-            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+            <div class="text-xs text-gray-400 mt-1">PNG, JPG, PDF, MP4, MOV, DOC, XLS, PPT · Biarkan kosong jika tidak ingin mengganti</div>
+            <input type="file" id="edit-file" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.mp4,.mov,.webm,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
           </div>
           <div id="edit-file-name" class="text-xs text-gray-500 mt-2 hidden"></div>
         </div>
@@ -1098,7 +1098,7 @@ function setupFileInput() {
 
 function handleFileSelect(file, prefix) {
   if (/\.rar$/i.test(file.name)) {
-    showToast('error', 'Format RAR tidak diizinkan. Gunakan ZIP atau format lain.');
+    showToast('error', 'Format file tidak diizinkan.');
     document.getElementById(prefix + '-file').value = '';
     return;
   }
@@ -1277,7 +1277,7 @@ async function handleMultiFileSelect(fileList) {
   // Tolak file RAR
   const rarFiles = Array.from(fileList).filter(f => /\.rar$/i.test(f.name));
   if (rarFiles.length > 0) {
-    showToast('error', 'Format RAR tidak diizinkan. Gunakan ZIP atau format lain.');
+    showToast('error', 'Format file tidak diizinkan.');
     return;
   }
 
@@ -1342,8 +1342,12 @@ async function handleMultiFileSelect(fileList) {
           vid.addEventListener('loadeddata', () => { vid.currentTime = 0.5; });
           vid.addEventListener('seeked', () => {
             const canvas = document.createElement('canvas');
-            canvas.width = 320; canvas.height = 180;
-            canvas.getContext('2d').drawImage(vid, 0, 0, 320, 180);
+            // Crop video al centro (aspect-ratio preserving)
+            const vw = vid.videoWidth || 320, vh = vid.videoHeight || 180;
+            const size = Math.min(vw, vh);
+            canvas.width = size; canvas.height = size;
+            const sx = (vw - size) / 2, sy = (vh - size) / 2;
+            canvas.getContext('2d').drawImage(vid, sx, sy, size, size, 0, 0, size, size);
             URL.revokeObjectURL(url);
             resolve(canvas.toDataURL('image/jpeg', 0.8));
           });
