@@ -1495,7 +1495,9 @@ async function openPreview(id) {
   document.getElementById('preview-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 
-  // ── Ambil slides dari Drive (persistent, tidak butuh localStorage) ──
+  // ── Ambil slides dari Drive — hapus cache folder agar urutan selalu segar ──
+  if (item.driveFolderId) delete _folderFileCache[item.driveFolderId];
+  item._previewSlides = null;
   const slides = await buildSlides(item);
   // Simpan di item agar previewNav bisa pakai
   item._previewSlides = slides;
@@ -1537,8 +1539,19 @@ async function buildSlides(item) {
           if (pptTypes.includes(f.mimeType) || /\.(ppt|pptx)$/i.test(f.name)) return 'ppt';
           return 'file';
         };
-        // Buat URL thumbnail via Google Drive embed (tidak butuh auth untuk file publik)
-        const slides = allFiles.map(f => {
+        // Urutkan file sesuai urutan upload (fileIds dari sheet), fallback ke nama file
+        const orderedFileIds = Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [];
+        let sortedFiles;
+        if (orderedFileIds.length > 0) {
+          const inOrder = orderedFileIds.map(fid => allFiles.find(x => x.id === fid)).filter(Boolean);
+          const rest    = allFiles.filter(f => !orderedFileIds.includes(f.id));
+          sortedFiles   = [...inOrder, ...rest];
+        } else {
+          sortedFiles = [...allFiles].sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        // Buat URL thumbnail via Google Drive embed
+        const slides = sortedFiles.map(f => {
           const t = getSlideType(f);
           return { type: t, url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
                    viewUrl: f.url, name: f.name, id: f.id, mimeType: f.mimeType };
