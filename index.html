@@ -1477,6 +1477,56 @@ async function openPreview(id) {
   updatePreviewNav(slides);
 }
 
+// ── Deteksi tipe file berdasarkan nama & mimeType ──────────────────────────
+function detectFileSlideType(name, mimeType, fid, viewUrl) {
+  const n = (name || '').toLowerCase();
+  const m = (mimeType || '').toLowerCase();
+
+  // Video
+  const videoMimes = ['video/mp4','video/quicktime','video/x-msvideo','video/webm','video/ogg','video/x-ms-wmv','video/mpeg'];
+  const videoExts  = ['.mp4','.mov','.avi','.webm','.ogv','.wmv','.mpeg','.mpg'];
+  if (videoMimes.includes(m) || videoExts.some(e => n.endsWith(e))) {
+    return { type: 'video', url: `https://drive.google.com/file/d/${fid}/preview` };
+  }
+
+  // Office docs (preview via Google Docs Viewer)
+  const officeMimes = [
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',   // docx
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',         // xlsx
+    'application/vnd.ms-excel',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+  ];
+  const officeExts = ['.pptx','.ppt','.docx','.doc','.xlsx','.xls','.odp','.odt','.ods'];
+  if (officeMimes.includes(m) || officeExts.some(e => n.endsWith(e))) {
+    const ext = officeExts.find(e => n.endsWith(e)) || (m.includes('presentation') ? '.pptx' : m.includes('word') ? '.docx' : '.xlsx');
+    return {
+      type: 'office',
+      url: `https://docs.google.com/viewer?embedded=true&url=https://drive.google.com/uc?id=${fid}`,
+      ext: ext.replace('.','').toUpperCase()
+    };
+  }
+
+  // PDF
+  if (m === 'application/pdf' || n.endsWith('.pdf')) {
+    return { type: 'office', url: `https://drive.google.com/file/d/${fid}/preview`, ext: 'PDF' };
+  }
+
+  // Image
+  const imageMimes = ['image/jpeg','image/png','image/gif','image/webp','image/jpg','image/svg+xml'];
+  const imageExts  = ['.jpg','.jpeg','.png','.gif','.webp','.svg'];
+  if (imageMimes.includes(m) || imageExts.some(e => n.endsWith(e))) {
+    return { type: 'image', url: `https://drive.google.com/thumbnail?id=${fid}&sz=w800` };
+  }
+
+  // Default: try thumbnail first (fallback for unknown)
+  return { type: 'image', url: `https://drive.google.com/thumbnail?id=${fid}&sz=w800` };
+}
+
 // Bangun array slide URL dari Drive — persistent & selalu fresh
 async function buildSlides(item) {
   // 1. Prioritas: driveFolderId → ambil semua file dari folder
@@ -1494,16 +1544,10 @@ async function buildSlides(item) {
     try {
       const resp = await apiCall('getFilesInFolder', { folderId: item.driveFolderId });
       if (resp && resp.ok && Array.isArray(resp.files) && resp.files.length > 0) {
-        // Filter hanya file yang bisa di-preview (gambar)
-        const imageTypes = ['image/jpeg','image/png','image/gif','image/webp','image/jpg'];
-        const imgFiles   = resp.files.filter(f => imageTypes.includes(f.mimeType));
-        const allFiles   = resp.files;
-        // Buat URL thumbnail via Google Drive embed (tidak butuh auth untuk file publik)
-        const slides = (imgFiles.length > 0 ? imgFiles : allFiles).map(f =>
-          ({ type: imgFiles.includes(f) ? 'image' : 'file',
-             url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
-             viewUrl: f.url, name: f.name, id: f.id })
-        );
+        const slides = resp.files.map(f => ({
+          ...detectFileSlideType(f.name, f.mimeType, f.id, f.url),
+          name: f.name, id: f.id, viewUrl: f.url
+        }));
         _folderFileCache[item.driveFolderId] = slides;
         return slides;
       }
@@ -1517,23 +1561,21 @@ async function buildSlides(item) {
     return urls.map(url => {
       const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
       const fid = m ? m[1] : null;
-      return { type: 'image',
-               url: fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w800` : url,
-               viewUrl: url, name: item.title, id: fid };
-    }).filter(s => s.id);
+      if (!fid) return null;
+      const slide = detectFileSlideType(item.title, null, fid, url);
+      return { ...slide, name: item.title, id: fid, viewUrl: url };
+    }).filter(Boolean);
   }
 
   // 3. fileIds dari sheet — fallback sebelum null
   const fids = Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [];
   if (fids.length > 0) {
     const names = Array.isArray(item.fileNames) ? item.fileNames : [];
-    return fids.map((fid, i) => ({
-      type   : 'image',
-      url    : `https://drive.google.com/thumbnail?id=${fid}&sz=w800`,
-      viewUrl: `https://drive.google.com/file/d/${fid}/view`,
-      name   : names[i] || (fids.length > 1 ? `File ${i+1}` : item.title),
-      id     : fid,
-    }));
+    return fids.map((fid, i) => {
+      const fname = names[i] || (fids.length > 1 ? `File ${i+1}` : item.title);
+      const slide = detectFileSlideType(fname, null, fid, `https://drive.google.com/file/d/${fid}/view`);
+      return { ...slide, name: fname, id: fid, viewUrl: `https://drive.google.com/file/d/${fid}/view` };
+    });
   }
 
   // 4. Tidak ada file sama sekali
@@ -1558,6 +1600,50 @@ function renderPreviewSlide(item, slides, idx) {
         <i class="fa-solid ${item.icon}" style="color:${catColors[item.cat]||'#888'};font-size:5rem;opacity:.7"></i>
         <span style="color:${catColors[item.cat]||'#888'};font-weight:600;">Pratinjau belum tersedia</span>
       </div>`;
+  } else if (slide.type === 'video') {
+    // ── Video preview ──────────────────────────────────────────────────────
+    contentEl.innerHTML = `
+      <div style="position:relative;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 24px 80px rgba(0,0,0,.6);">
+        <iframe
+          src="${slide.url}"
+          style="width:100%;height:52vh;min-height:260px;border:none;display:block;border-radius:14px;"
+          allow="autoplay; encrypted-media"
+          allowfullscreen
+          loading="lazy"
+        ></iframe>
+        ${slide.name ? `<div style="position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.65);color:#fff;font-size:.65rem;font-weight:700;border-radius:6px;padding:3px 8px;letter-spacing:.03em;"><i class='fa-solid fa-film' style='margin-right:4px;'></i>${slide.name}</div>` : ''}
+        ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
+      </div>`;
+  } else if (slide.type === 'office') {
+    // ── Office / PDF preview via iframe ───────────────────────────────────
+    const extIcon = {
+      'PPTX':'fa-file-powerpoint','PPT':'fa-file-powerpoint',
+      'DOCX':'fa-file-word','DOC':'fa-file-word',
+      'XLSX':'fa-file-excel','XLS':'fa-file-excel',
+      'PDF':'fa-file-pdf'
+    }[slide.ext] || 'fa-file';
+    const extColor = {
+      'PPTX':'#d04e00','PPT':'#d04e00',
+      'DOCX':'#2b5eb7','DOC':'#2b5eb7',
+      'XLSX':'#1e7145','XLS':'#1e7145',
+      'PDF':'#e02b20'
+    }[slide.ext] || '#888';
+    contentEl.innerHTML = `
+      <div style="position:relative;border-radius:14px;overflow:hidden;background:#1e2a45;box-shadow:0 24px 80px rgba(0,0,0,.6);">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(0,0,0,.3);border-bottom:1px solid rgba(255,255,255,.1);">
+          <i class="fa-solid ${extIcon}" style="color:${extColor};font-size:1.1rem;"></i>
+          <span style="color:rgba(255,255,255,.85);font-size:.78rem;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${slide.name||''}</span>
+          <span style="background:${extColor};color:#fff;font-size:.6rem;font-weight:800;border-radius:4px;padding:2px 7px;letter-spacing:.04em;">${slide.ext||''}</span>
+        </div>
+        <iframe
+          src="${slide.url}"
+          style="width:100%;height:50vh;min-height:280px;border:none;display:block;"
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-popups"
+        ></iframe>
+        ${totalSlides > 1 ? `<div style="position:absolute;top:48px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
+      </div>`;
+  } else if (slide.type === 'image') {
   } else if (slide.type === 'image') {
     contentEl.innerHTML = `
       <div style="position:relative;border-radius:14px;overflow:hidden;">
@@ -1570,7 +1656,7 @@ function renderPreviewSlide(item, slides, idx) {
         ${totalSlides > 1 ? `<div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:.65rem;font-weight:700;border-radius:99px;padding:3px 10px;backdrop-filter:blur(4px);">${idx+1} / ${totalSlides}</div>` : ''}
       </div>`;
     } else {
-    // File non-gambar (PDF, dll)
+    // File non-dikenal
     contentEl.innerHTML = `
       <div class="preview-placeholder" style="background:#1e2a45;min-height:280px;">
         <i class="fa-solid fa-file" style="color:#94a3b8;font-size:4rem;opacity:.8"></i>
@@ -2222,10 +2308,16 @@ function buildCard(item) {
         ? `https://drive.google.com/thumbnail?id=${firstFileId}&sz=w400`
         : null;
 
+  const isVideo = item.cat === 'video';
   const thumbHtml = driveThumbnailUrl
     ? `<img src="${driveThumbnailUrl}" alt="${item.title}" loading="lazy"
+         style="width:100%;height:100%;object-fit:cover;display:block;"
          onerror="this.style.display='none';this.nextElementSibling&&this.nextElementSibling.nextElementSibling?(this.nextElementSibling.style.display='flex'):(()=>{var p=document.createElement('div');p.className='thumb-placeholder';p.style.cssText='background:${item.color};width:100%;height:100%;display:flex;align-items:center;justify-content:center;';p.innerHTML='<i class=\\'fa-solid ${item.icon}\\' style=\\'color:${item.iconColor};font-size:2.8rem;opacity:.6\\'></i>';this.parentNode.insertBefore(p,this);})()">
-       <div class="thumb-overlay"><i class="fa-solid fa-magnifying-glass-plus thumb-overlay-icon"></i></div>`
+       <div class="thumb-overlay">
+         ${isVideo
+           ? `<div style="background:rgba(255,255,255,.92);border-radius:99px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(0,0,0,.35);transition:transform .2s;" class="thumb-overlay-icon"><i class="fa-solid fa-play" style="color:#1A2340;font-size:1.1rem;margin-left:3px;"></i></div>`
+           : `<i class="fa-solid fa-magnifying-glass-plus thumb-overlay-icon"></i>`}
+       </div>`
     : `<div class="thumb-placeholder" style="background:${item.color};width:100%;height:100%;">
          <i class="fa-solid ${item.icon}" style="color:${item.iconColor};font-size:2.8rem;opacity:.6"></i>
        </div>
