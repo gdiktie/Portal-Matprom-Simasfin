@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-<!DOCTYPE html>
 <html lang="id"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -812,7 +811,7 @@ const BRANCHES = [
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // ── GANTI dengan URL Deploy Apps Script kamu ─────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbzI3nPazWmXm0RSQHWFImeiRHeTSM-elSQ1psI3C82BJ8-oIVj8DQp5N4oMsTOZChEsrA/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbziguU7-vdoXgss4VJzLDenbUpreSjaIjlVNMENAB6QyhSKEloqfdpEIswW9gT4lGE/exec';
 // ─────────────────────────────────────────────────────────────
 
 let currentUser = null;
@@ -2566,9 +2565,7 @@ async function doUpload() {
       const payload = JSON.stringify({
         action: 'uploadAndSave', base64Data: base64,
         fileName: file.name, mimeType: file.type || 'application/octet-stream',
-        subFolder, bulan,
-        // ✅ Jalur folder terstruktur: Portal Matprom → Bulan → Kategori → Judul
-        folderPath: ['Portal Matprom', bulan, subFolder, judul],
+        subFolder, bulan, judul,
         uploadedBy: currentUser ? currentUser.idcard4 : 'KPNO',
         item: tempItem,
       });
