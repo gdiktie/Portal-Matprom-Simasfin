@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2624,9 +2625,9 @@ async function doUpload() {
     setProgress(btn, 93, 'Menyimpan ke server...');
     try { await apiPost('editMedia', { item: combinedItem }); } catch(e) {}
 
-    // Hapus item temporary sisa (indeks 1 ke atas)
+    // Hapus item temporary sisa dari Sheet saja (sheetOnly:true — jangan hapus Drive)
     for (let i = 1; i < tempIds.length; i++) {
-      try { await apiPost('deleteMedia', { id: String(tempIds[i]) }); } catch(e) {}
+      try { await apiPost('deleteMedia', { id: String(tempIds[i]), sheetOnly: true }); } catch(e) {}
     }
 
     mediaData.unshift(combinedItem);
