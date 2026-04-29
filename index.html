@@ -823,42 +823,92 @@ let loginTabMode = "kpno";
 let registerTabMode = "kpno";
 
 // ===== API HELPER =====
-// Menggunakan GET + query param karena browser memblokir POST
-// ke Apps Script akibat redirect CORS. doGet di Apps Script
-// membaca ?data= dan me-route ke handler yang sama.
-// GET — untuk action ringan tanpa payload besar (login, register, getMedia)
+// Google Apps Script deployed URL selalu redirect ke URL baru.
+// Browser memblokir baca respons dari opaque redirect (CORS).
+// Solusi: gunakan no-cors TIDAK bisa baca respons → gunakan fetch biasa
+// dengan mode 'cors' dan redirect: 'follow', lalu baca text().
+// Jika gagal (network error / CORS opaque), retry sekali lagi.
+
+const FETCH_TIMEOUT_MS = 20000; // 20 detik timeout
+
+// Helper: fetch dengan timeout
+function fetchWithTimeout(url, options = {}, ms = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+// Helper: parse respons — tangani kasus Apps Script mengembalikan HTML error page
+function parseGASResponse(text) {
+  const trimmed = (text || '').trim();
+  // Jika bukan JSON (misal HTML error page dari Google), lempar error jelas
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    // Cek apakah Apps Script belum di-deploy / URL salah
+    if (trimmed.toLowerCase().includes('script') || trimmed.toLowerCase().includes('html')) {
+      throw new Error('Server Apps Script tidak merespons dengan benar. Pastikan URL deploy sudah benar dan script sudah di-publish.');
+    }
+    throw new Error('Respons server tidak valid (bukan JSON)');
+  }
+  return JSON.parse(trimmed);
+}
+
+// GET — untuk action ringan (login, register, getMedia, getFilesInFolder, dll.)
 async function apiCall(action, payload = {}) {
   const body = JSON.stringify({ action, ...payload });
   const url  = API_URL + '?data=' + encodeURIComponent(body);
-  const res  = await fetch(url, { method: 'GET', redirect: 'follow' });
-  const text = await res.text();
-  try { return JSON.parse(text); }
-  catch(e) { throw new Error('Respons server tidak valid'); }
-}
-
-// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia)
-// Jika POST gagal (misal CORS redirect), fallback ke GET dengan data yang sama
-async function apiPost(action, payload = {}) {
-  const body = JSON.stringify({ action, ...payload });
   let text = '';
   try {
-    const res = await fetch(API_URL, { method: 'POST', body, redirect: 'follow' });
+    const res = await fetchWithTimeout(url, { method: 'GET', redirect: 'follow' });
     text = await res.text();
-    const parsed = JSON.parse(text);
-    // Jika server mengembalikan ok: false, lempar error agar caller bisa handle
+    return parseGASResponse(text);
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('Koneksi timeout. Periksa jaringan internet kamu.');
+    // Retry sekali lagi sebelum menyerah
+    try {
+      const res2 = await fetchWithTimeout(url, { method: 'GET', redirect: 'follow' }, 15000);
+      const text2 = await res2.text();
+      return parseGASResponse(text2);
+    } catch(e2) {
+      if (e2.name === 'AbortError') throw new Error('Koneksi timeout. Periksa jaringan internet kamu.');
+      // Lempar pesan error yang lebih deskriptif
+      const msg = e2.message || e.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet atau coba lagi nanti.');
+      }
+      throw new Error(msg || 'Gagal terhubung ke server.');
+    }
+  }
+}
+
+// POST — untuk action dengan payload besar (editMedia, addMedia, deleteMedia, uploadAndSave)
+// Selalu fallback ke GET jika POST gagal akibat CORS/redirect
+async function apiPost(action, payload = {}) {
+  const body = JSON.stringify({ action, ...payload });
+  // Coba POST dulu
+  try {
+    const res = await fetchWithTimeout(API_URL, { method: 'POST', body, redirect: 'follow' });
+    const text = await res.text();
+    const parsed = parseGASResponse(text);
     if (parsed && parsed.ok === false) throw new Error(parsed.msg || 'Server menolak permintaan');
     return parsed;
   } catch(e) {
-    // Fallback: coba via GET jika POST gagal (CORS/redirect issue)
+    if (e.name === 'AbortError') throw new Error('Koneksi timeout. Periksa jaringan internet kamu.');
+    // Fallback ke GET jika POST gagal (CORS/redirect issue umum di Apps Script)
     try {
       const url = API_URL + '?data=' + encodeURIComponent(body);
-      const res2 = await fetch(url, { method: 'GET', redirect: 'follow' });
+      const res2 = await fetchWithTimeout(url, { method: 'GET', redirect: 'follow' });
       const text2 = await res2.text();
-      const parsed2 = JSON.parse(text2);
+      const parsed2 = parseGASResponse(text2);
       if (parsed2 && parsed2.ok === false) throw new Error(parsed2.msg || 'Server menolak permintaan');
       return parsed2;
     } catch(e2) {
-      throw new Error('Gagal terhubung ke server: ' + (e2.message || e.message));
+      if (e2.name === 'AbortError') throw new Error('Koneksi timeout. Periksa jaringan internet kamu.');
+      const msg = e2.message || e.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+        throw new Error('Tidak dapat terhubung ke server. Periksa koneksi internet atau coba lagi nanti.');
+      }
+      throw new Error(msg || 'Gagal terhubung ke server.');
     }
   }
 }
@@ -2062,7 +2112,17 @@ async function doLogin() {
       showToast('error', resp.msg || 'ID Card atau password salah');
     }
   } catch (err) {
-    showToast('error', 'Gagal terhubung ke server. Coba lagi.');
+    const msg = err.message || '';
+    if (msg.includes('timeout') || msg.includes('Timeout')) {
+      showToast('error', 'Koneksi timeout. Periksa jaringan internet kamu, lalu coba lagi.');
+    } else if (msg.includes('Apps Script') || msg.includes('deploy') || msg.includes('tidak valid')) {
+      showToast('error', 'Konfigurasi server bermasalah. Hubungi admin portal.');
+    } else if (msg.includes('internet') || msg.includes('terhubung')) {
+      showToast('error', msg);
+    } else {
+      showToast('error', 'Gagal terhubung ke server. Periksa koneksi internet dan coba lagi.');
+    }
+    console.error('[Login Error]', err);
   } finally {
     btnLogin.disabled = false;
     btnLogin.innerHTML = '<i class="fa-solid fa-right-to-bracket mr-2"></i>Masuk Portal';
@@ -2107,7 +2167,15 @@ async function doRegister() {
       showToast('error', resp.msg || 'Registrasi gagal');
     }
   } catch (err) {
-    showToast('error', 'Gagal terhubung ke server. Coba lagi.');
+    const msg = err.message || '';
+    if (msg.includes('timeout')) {
+      showToast('error', 'Koneksi timeout. Periksa jaringan dan coba lagi.');
+    } else if (msg.includes('internet') || msg.includes('terhubung')) {
+      showToast('error', msg);
+    } else {
+      showToast('error', 'Gagal terhubung ke server. Periksa koneksi internet dan coba lagi.');
+    }
+    console.error('[Register Error]', err);
   } finally {
     btnReg.disabled = false;
     btnReg.innerHTML = '<i class="fa-solid fa-user-plus mr-2"></i>Daftar Sekarang';
