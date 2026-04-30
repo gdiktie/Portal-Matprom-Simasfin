@@ -2627,31 +2627,29 @@ async function doUpload() {
       try { await apiPost('deleteMedia', { id: String(tempIds[i]), sheetOnly: true }); } catch(e) {}
     }
 
-    // ── Hapus semua item temp dari mediaData lokal (id tempIds[0..n]) ──
-    // FIX: tempIds sudah ada di mediaData dari loop upload (tempItem), harus dihapus dulu
+    // BUG FIX: hapus semua tempItem dari mediaData lokal sebelum unshift
     tempIds.forEach(tid => {
       const idx = mediaData.findIndex(d => String(d.id) === String(tid));
       if (idx !== -1) mediaData.splice(idx, 1);
     });
 
-    // Tambahkan satu item gabungan di posisi pertama
     mediaData.unshift(combinedItem);
     saveMediaLocalCache();
 
-    // ── Render langsung tanpa setTimeout agar tidak ada race condition ──
     setProgress(btn, 100, 'Berhasil!');
+
+    // BUG FIX: hapus setTimeout — langsung render agar tidak ada race condition
     btn.disabled = false;
     resetBtn(btn);
     closeModal('upload');
 
-    // FIX: set activeMonth SEBELUM renderCards, gunakan .trim() agar cocok dengan textContent HTML
+    // BUG FIX: set activeMonth SEBELUM renderCards + gunakan .trim()
     activeMonth = bulan;
     document.querySelectorAll('.month-tab').forEach(b => {
       b.classList.toggle('active', b.textContent.trim() === bulan);
     });
 
     renderCards();
-
     showToast('success', totalFiles > 1
       ? `${totalFiles} file berhasil diupload ke Drive!`
       : 'Materi berhasil diupload ke Drive!');
