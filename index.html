@@ -2528,7 +2528,7 @@ async function doUpload() {
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
-    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
     renderCards();
     showToast('success', 'Materi berhasil disimpan!');
     resetUploadForm();
@@ -2577,7 +2577,9 @@ async function doUpload() {
       const text = await res.text();
       let r;
       try { r = JSON.parse(text); } catch(e) { throw new Error('Respons server tidak valid'); }
-      if (!r || !r.ok) throw new Error((r && r.msg) || 'Gagal upload file ' + (i+1));
+      if (!r) throw new Error('Tidak ada respons dari server');
+      if (!r.ok && !r.url && !r.fileId) throw new Error(r.msg || 'Gagal upload file ' + (i+1));
+      if (!r.url && r.fileId) r.url = 'https://drive.google.com/file/d/' + r.fileId + '/view';
 
       if (!r.url) throw new Error('Server tidak mengembalikan URL file ' + (i+1));
       driveUrls.push(r.url);
@@ -2631,21 +2633,19 @@ async function doUpload() {
     }
 
     mediaData.unshift(combinedItem);
-    saveMediaLocalCache(); // ✅ simpan thumb/thumbs/driveUrls/deskripsi ke localStorage
+    saveMediaLocalCache();
 
     setProgress(btn, 100, 'Berhasil!');
-    setTimeout(() => {
-      btn.disabled = false;
-      resetBtn(btn);
-      closeModal('upload');
-      activeMonth = bulan;
-      document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
-      renderCards();
-      showToast('success', totalFiles > 1
-        ? `${totalFiles} file berhasil diupload ke Drive!`
-        : 'Materi berhasil diupload ke Drive!');
-      resetUploadForm();
-    }, 600);
+    btn.disabled = false;
+    resetBtn(btn);
+    closeModal('upload');
+    activeMonth = bulan;
+    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
+    renderCards();
+    showToast('success', totalFiles > 1
+      ? `${totalFiles} file berhasil diupload ke Drive!`
+      : 'Materi berhasil diupload ke Drive!');
+    resetUploadForm();
 
   } catch(e) {
     showToast('error', 'Gagal upload: ' + e.message);
@@ -2778,7 +2778,7 @@ async function doEdit() {
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
     closeModal('edit');
     activeMonth = bulan;
-    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent === bulan));
+    document.querySelectorAll('.month-tab').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
     renderCards();
     showToast('success','Materi berhasil diperbarui & tersimpan!');
   } catch(e) {
