@@ -239,6 +239,13 @@
   .cat-btn.active { background: var(--red); border-color: var(--red); color: #fff; }
   .cat-btn:hover:not(.active) { border-color: var(--red); color: var(--red); }
 
+  /* REGIONAL FILTER */
+  .reg-btn { border-radius: 99px; padding: 5px 14px; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s; border: 1.5px solid #c7d0e4; color: #4a5680; background: #f0f3fb; }
+  .reg-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .reg-btn:hover:not(.active) { border-color: var(--navy); color: var(--navy); }
+  .reg-tag { display: inline-flex; align-items: center; gap: 3px; background: #e8edf7; color: var(--navy); border-radius: 5px; padding: 2px 7px; font-size: .65rem; font-weight: 700; letter-spacing: .02em; border: 1px solid #c7d0e4; white-space: nowrap; }
+  .reg-tag i { font-size: .55rem; }
+
   @media(max-width:640px) {
     .modal-body, .modal-header { padding: 20px; }
     .hero-title { font-size: 1.6rem; }
@@ -279,6 +286,17 @@
     }
     #cat-tabs::-webkit-scrollbar { display: none; }
     .cat-btn { flex-shrink: 0; }
+
+    /* Regional tabs: scroll horizontally */
+    #reg-tabs {
+      flex-wrap: nowrap !important;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 4px;
+    }
+    #reg-tabs::-webkit-scrollbar { display: none; }
+    .reg-btn { flex-shrink: 0; }
 
     /* Top controls: stack cleanly */
     #content-section .flex.items-center.justify-between {
@@ -537,6 +555,23 @@
       <!-- Hidden month-tabs div (kept for JS compatibility) -->
       <div id="month-tabs" style="display:none;"></div>
       <div class="flex flex-wrap gap-2" id="cat-tabs"><button class="cat-btn active" onclick="filterCat('all',this)">Semua</button></div>
+      <!-- REGIONAL FILTER -->
+      <div class="flex items-center gap-2 mt-2 flex-wrap">
+        <span class="text-xs font-semibold text-gray-400" style="white-space:nowrap;"><i class="fa-solid fa-map-marker-alt mr-1"></i>Regional:</span>
+        <div class="flex flex-wrap gap-1.5" id="reg-tabs">
+          <button class="reg-btn active" onclick="filterReg('ALL REGION',this)">Semua Regional</button>
+          <button class="reg-btn" onclick="filterReg('JABODETABEK',this)">Jabodetabek</button>
+          <button class="reg-btn" onclick="filterReg('SUMBAGUT',this)">Sumbagut</button>
+          <button class="reg-btn" onclick="filterReg('KALIMANTAN',this)">Kalimantan</button>
+          <button class="reg-btn" onclick="filterReg('INTIM',this)">Intim</button>
+          <button class="reg-btn" onclick="filterReg('JATIM',this)">Jatim</button>
+          <button class="reg-btn" onclick="filterReg('JATENG',this)">Jateng</button>
+          <button class="reg-btn" onclick="filterReg('JABAR',this)">Jabar</button>
+          <button class="reg-btn" onclick="filterReg('BALI NUSRA',this)">Bali Nusra</button>
+          <button class="reg-btn" onclick="filterReg('SUMBAGSEL',this)">Sumbagsel</button>
+          <button class="reg-btn" onclick="filterReg('SULAWESI',this)">Sulawesi</button>
+        </div>
+      </div>
     </div>
 
     <!-- SEGMENTS: dirender dinamis oleh JS berdasarkan data bulan aktif -->
@@ -1028,6 +1063,7 @@ let currentUser = null;
 let mediaData = [];              // ✅ deklarasi global
 let activeMonth = "";
 let activeCat = "all";
+let activeReg = "ALL REGION";
 let selectedDownloadId = null;
 let loginTabMode = "kpno";
 let registerTabMode = "kpno";
@@ -1147,6 +1183,7 @@ function normalizeItem(item) {
     driveUrl     : item.driveUrl || (urls.length > 0 ? urls[0] : null),
     driveFolderId: item.driveFolderId || null,
     fileIds, fileNames,
+    regional     : item.regional || 'ALL REGION',
   };
 }
 
@@ -2513,9 +2550,17 @@ function renderCards() {
   if (!currentUser) return;
 
   // Jika activeMonth kosong → tampilkan semua bulan
-  const filtered = activeMonth
+  let filtered = activeMonth
     ? mediaData.filter(d => d.month === activeMonth)
     : mediaData.slice();
+
+  // Filter regional: 'ALL REGION' tampilkan semua; regional lain tampilkan yg match atau yg 'ALL REGION'
+  if (activeReg && activeReg !== 'ALL REGION') {
+    filtered = filtered.filter(d => {
+      const reg = (d.regional || 'ALL REGION').toUpperCase().trim();
+      return reg === 'ALL REGION' || reg === activeReg.toUpperCase().trim();
+    });
+  }
 
   const q = (document.getElementById('search-input').value || '').toLowerCase();
 
@@ -2689,6 +2734,12 @@ function buildCard(item) {
   const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
   const clickable = (!locked || mkt);
 
+  // Regional tag
+  const regValue = (item.regional || 'ALL REGION').toUpperCase().trim();
+  const regTagHtml = regValue && regValue !== 'ALL REGION'
+    ? `<span class="reg-tag"><i class="fa-solid fa-map-marker-alt"></i>${regValue}</span>`
+    : '';
+
   return `
   <div class="${cardClass}" id="card-${item.id}">
     <div class="card-thumb" onclick="${clickable ? `openPreview(${item.id})` : ''}"
@@ -2700,9 +2751,10 @@ function buildCard(item) {
     </div>
     <div class="p-4" style="display:flex;flex-direction:column;flex:1;min-height:0;">
       <div style="flex:1;">
-        <div class="mb-2 flex items-center justify-between">
+        <div class="mb-2 flex items-center gap-2 flex-wrap">
           <span class="badge-type ${catColor}">${catLabel}</span>
-          <span class="text-xs text-gray-400">${item.month}</span>
+          ${regTagHtml}
+          <span class="text-xs text-gray-400 ml-auto">${item.month}</span>
         </div>
         <h3 class="font-semibold text-sm ${(locked && !mkt) ? 'text-gray-400' : 'text-navy'} leading-snug mb-1 line-clamp-2">${item.title}</h3>
         <div class="text-xs text-gray-400 flex items-center gap-2">
@@ -2742,6 +2794,13 @@ async function doRefreshMedia() {
 function filterCat(cat, btn) {
   activeCat = cat;
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCards();
+}
+
+function filterReg(reg, btn) {
+  activeReg = reg;
+  document.querySelectorAll('.reg-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderCards();
 }
