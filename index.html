@@ -248,7 +248,7 @@
   .reg-btn { border-radius: 99px; padding: 5px 14px; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s; border: 1.5px solid #c7d0e4; color: #4a5680; background: #f0f3fb; }
   .reg-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
   .reg-btn:hover:not(.active) { border-color: var(--navy); color: var(--navy); }
-  .reg-tag { display: inline-flex; align-items: center; gap: 3px; background: #e8edf7; color: var(--navy); border-radius: 5px; padding: 2px 7px; font-size: .65rem; font-weight: 700; letter-spacing: .02em; border: 1px solid #c7d0e4; white-space: nowrap; }
+  .reg-tag { display: inline-flex; align-items: center; gap: 3px; border-radius: 5px; padding: 2px 7px; font-size: .65rem; font-weight: 700; letter-spacing: .02em; border: 1px solid; white-space: nowrap; }
   .reg-tag i { font-size: .55rem; }
 
   @media(max-width:640px) {
@@ -1383,10 +1383,11 @@ function buildMonthTabs() {
     list.appendChild(btn);
   });
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside (bubble phase - fires after onclick of items)
   document.addEventListener('click', (e) => {
-    const wrap = document.getElementById('month-dropdown-wrap');
-    if (wrap && !wrap.contains(e.target)) closeMonthDropdown();
+    const monthWrap = document.getElementById('month-dropdown-wrap');
+    if (monthWrap && !monthWrap.contains(e.target)) closeMonthDropdown();
+
     const regWrap = document.getElementById('reg-dropdown-wrap');
     if (regWrap && !regWrap.contains(e.target)) closeRegDropdown();
   });
@@ -1449,7 +1450,16 @@ function selectReg(reg, label, btn) {
   document.querySelectorAll('.reg-dd-item').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('reg-dropdown-label').textContent = label;
-  closeRegDropdown();
+  // Close dropdown
+  const list = document.getElementById('reg-dropdown-list');
+  if (list) { list.style.display = 'none'; list.classList.remove('open'); }
+  const chevron = document.getElementById('reg-chevron');
+  if (chevron) chevron.style.transform = '';
+  const dropBtn = document.getElementById('reg-dropdown-btn');
+  if (dropBtn) dropBtn.style.borderColor = 'var(--border)';
+  // Reset cat to all and render
+  activeCat = 'all';
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === 'Semua'));
   renderCards();
 }
 
@@ -2813,16 +2823,17 @@ function buildCard(item) {
   const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
   const clickable = (!locked || mkt);
 
-  // Regional tag
+  // Regional tag - always show
   const regValue = (item.regional || 'ALL REGION').toUpperCase().trim();
   const REG_LABELS = {
+    'ALL REGION':'Semua Regional',
     'JABODETABEK':'Jabodetabek','SUMBAGUT':'Sumbagut','KALIMANTAN':'Kalimantan',
     'INTIM':'Intim','JATIM':'Jatim','JATENG':'Jateng','JABAR':'Jabar',
     'BALI NUSRA':'Bali Nusra','SUMBAGSEL':'Sumbagsel','SULAWESI':'Sulawesi'
   };
-  const regTagHtml = regValue && regValue !== 'ALL REGION' && REG_LABELS[regValue]
-    ? `<span class="reg-tag"><i class="fa-solid fa-map-marker-alt"></i>${REG_LABELS[regValue]}</span>`
-    : '';
+  const regLabel = REG_LABELS[regValue] || regValue;
+  const regIsAll = regValue === 'ALL REGION';
+  const regTagHtml = `<span class="reg-tag" style="${regIsAll ? 'background:#f0f3fb;color:#6B7A99;border-color:#c7d0e4;' : 'background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;'}"><i class="fa-solid fa-${regIsAll ? 'globe' : 'map-marker-alt'}"></i>${regLabel}</span>`;
 
   return `
   <div class="${cardClass}" id="card-${item.id}">
