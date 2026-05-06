@@ -797,7 +797,7 @@
           <label class="input-label">Judul Materi <span class="text-red-500">*</span></label>
           <input type="text" id="up-judul" placeholder="Contoh: Cetak Dana Tunai Q1 2024" class="input-field">
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-3 gap-3">
           <div>
             <label class="input-label">Kategori <span class="text-red-500">*</span></label>
             <select id="up-kategori" class="input-field">
@@ -818,6 +818,17 @@
               <option>April</option><option>Mei</option><option>Juni</option>
               <option>Juli</option><option>Agustus</option><option>September</option>
               <option>Oktober</option><option>November</option><option>Desember</option>
+            </select>
+          </div>
+          <div>
+            <label class="input-label">Regional</label>
+            <select id="up-regional" class="input-field">
+              <option value="ALL REGION">-- Semua --</option>
+              <option value="REGIONAL 1">Regional 1</option>
+              <option value="REGIONAL 2">Regional 2</option>
+              <option value="REGIONAL 3">Regional 3</option>
+              <option value="REGIONAL 4">Regional 4</option>
+              <option value="REGIONAL 5">Regional 5</option>
             </select>
           </div>
         </div>
@@ -884,7 +895,7 @@
           <label class="input-label">Judul Materi <span class="text-red-500">*</span></label>
           <input type="text" id="edit-judul" placeholder="Contoh: Cetak Dana Tunai Q1 2024" class="input-field">
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-3 gap-3">
           <div>
             <label class="input-label">Kategori <span class="text-red-500">*</span></label>
             <select id="edit-kategori" class="input-field">
@@ -905,6 +916,17 @@
               <option>April</option><option>Mei</option><option>Juni</option>
               <option>Juli</option><option>Agustus</option><option>September</option>
               <option>Oktober</option><option>November</option><option>Desember</option>
+            </select>
+          </div>
+          <div>
+            <label class="input-label">Regional</label>
+            <select id="edit-regional" class="input-field">
+              <option value="ALL REGION">-- Semua --</option>
+              <option value="REGIONAL 1">Regional 1</option>
+              <option value="REGIONAL 2">Regional 2</option>
+              <option value="REGIONAL 3">Regional 3</option>
+              <option value="REGIONAL 4">Regional 4</option>
+              <option value="REGIONAL 5">Regional 5</option>
             </select>
           </div>
         </div>
@@ -2884,6 +2906,7 @@ async function doUpload() {
 
   const deskripsi = document.getElementById('up-deskripsi') ? document.getElementById('up-deskripsi').value.trim() : '';
   const isLocked  = !!(document.getElementById('up-locked') && document.getElementById('up-locked').checked);
+  const regional  = (document.getElementById('up-regional') ? document.getElementById('up-regional').value : '') || 'ALL REGION';
 
   const btn = document.querySelector('#modal-upload .btn-red-full');
   btn.disabled = true;
@@ -2910,7 +2933,7 @@ async function doUpload() {
       icon: iconMap[kat] || 'fa-file', color: colorMap[kat] || '#f5f5f5',
       iconColor: icMap[kat] || '#888', size: '–',
       thumb: thumbSrc, thumbs: thumbSrc ? [thumbSrc] : [], driveUrl: null,
-      driveUrls: [], deskripsi: deskripsi || '', locked: isLocked,
+      driveUrls: [], deskripsi: deskripsi || '', locked: isLocked, regional: regional,
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
@@ -3009,6 +3032,7 @@ async function doUpload() {
       fileNames     : uploadedFileNames,
       deskripsi     : deskripsi || '',
       locked        : isLocked,
+      regional      : regional,
       uploadedBy    : currentUser ? currentUser.idcard4 : '',
       thumb         : thumbs[0] || null,
       thumbs        : thumbs,
@@ -3051,6 +3075,7 @@ function resetUploadForm() {
   document.getElementById('up-judul').value    = '';
   document.getElementById('up-kategori').value = '';
   document.getElementById('up-bulan').value    = '';
+  if (document.getElementById('up-regional')) document.getElementById('up-regional').value = 'ALL REGION';
   document.getElementById('up-isnew').checked  = false;
   document.getElementById('up-locked').checked = false;
   document.getElementById('up-deskripsi').value = '';
@@ -3103,6 +3128,9 @@ function openEdit(id) {
   document.getElementById('edit-isnew').checked = !!item.isNew;
   document.getElementById('edit-deskripsi').value = item.deskripsi || '';
   document.getElementById('edit-locked').checked = !!item.locked;
+  if (document.getElementById('edit-regional')) {
+    document.getElementById('edit-regional').value = (item.regional || 'ALL REGION').toUpperCase().trim();
+  }
   document.getElementById('edit-file-name').classList.add('hidden');
   document.getElementById('edit-file').value = '';
 
@@ -3126,6 +3154,7 @@ async function doEdit() {
   const isNew   = document.getElementById('edit-isnew').checked;
   const isLocked= document.getElementById('edit-locked').checked;
   const deskripsi = document.getElementById('edit-deskripsi').value.trim();
+  const regional = (document.getElementById('edit-regional') ? document.getElementById('edit-regional').value : '') || 'ALL REGION';
 
   if (!judul || !kat || !bulan) { showToast('error','Harap lengkapi semua field'); return; }
 
@@ -3153,6 +3182,7 @@ async function doEdit() {
     thumb: hasNewThumb ? editThumbSrc : (previewVisible ? oldThumb : null),
     deskripsi: deskripsi,
     locked: isLocked,
+    regional: regional,
   };
 
   const btn = document.querySelector('#modal-edit .btn-red-full');
