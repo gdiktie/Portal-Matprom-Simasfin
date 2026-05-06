@@ -140,6 +140,11 @@
   .month-dd-item:hover { background:var(--red-light); color:var(--red); }
   .month-dd-item.active { background:var(--red); color:#fff; }
 
+  /* REGIONAL DROPDOWN */
+  .reg-dd-item { display:flex; align-items:center; gap:7px; width:100%; text-align:left; padding:8px 12px; border:none; background:transparent; font-size:.82rem; font-weight:600; color:var(--muted); border-radius:8px; cursor:pointer; transition:background .12s, color .12s; }
+  .reg-dd-item:hover { background:#eef1fb; color:var(--navy); }
+  .reg-dd-item.active { background:var(--navy); color:#fff; }
+
   /* FOOTER */
   footer { background: var(--navy); color: rgba(255,255,255,.6); }
 
@@ -544,6 +549,33 @@
                 <i class="fa-solid fa-layer-group" style="font-size:.72rem;opacity:.6;"></i> Semua Bulan
               </button>
               <div style="height:1px;background:var(--border);margin:5px 0;"></div>
+            </div>
+          </div>
+          <!-- Regional Dropdown -->
+          <div class="relative flex-shrink-0" id="reg-dropdown-wrap">
+            <button id="reg-dropdown-btn" onclick="toggleRegDropdown()"
+              style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 14px;font-size:.82rem;font-weight:600;color:var(--navy);cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap;min-width:150px;transition:border-color .15s;"
+              onmouseover="this.style.borderColor='var(--navy)'" onmouseout="if(!document.getElementById('reg-dropdown-list').classList.contains('open'))this.style.borderColor='var(--border)'">
+              <i class="fa-solid fa-map-marker-alt" style="font-size:.8rem;color:var(--navy);"></i>
+              <span id="reg-dropdown-label">Semua Regional</span>
+              <i class="fa-solid fa-chevron-down text-gray-400 ml-auto" style="font-size:.65rem;" id="reg-chevron"></i>
+            </button>
+            <div id="reg-dropdown-list"
+              style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1.5px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(26,35,64,.12);z-index:200;min-width:180px;padding:6px;overflow:hidden;">
+              <button class="reg-dd-item active" onclick="selectReg('ALL REGION', 'Semua Regional', this)">
+                <i class="fa-solid fa-globe" style="font-size:.72rem;opacity:.6;"></i> Semua Regional
+              </button>
+              <div style="height:1px;background:var(--border);margin:5px 0;"></div>
+              <button class="reg-dd-item" onclick="selectReg('JABODETABEK','Jabodetabek',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jabodetabek</button>
+              <button class="reg-dd-item" onclick="selectReg('SUMBAGUT','Sumbagut',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sumbagut</button>
+              <button class="reg-dd-item" onclick="selectReg('KALIMANTAN','Kalimantan',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Kalimantan</button>
+              <button class="reg-dd-item" onclick="selectReg('INTIM','Intim',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Intim</button>
+              <button class="reg-dd-item" onclick="selectReg('JATIM','Jatim',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jatim</button>
+              <button class="reg-dd-item" onclick="selectReg('JATENG','Jateng',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jateng</button>
+              <button class="reg-dd-item" onclick="selectReg('JABAR','Jabar',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jabar</button>
+              <button class="reg-dd-item" onclick="selectReg('BALI NUSRA','Bali Nusra',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Bali Nusra</button>
+              <button class="reg-dd-item" onclick="selectReg('SUMBAGSEL','Sumbagsel',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sumbagsel</button>
+              <button class="reg-dd-item" onclick="selectReg('SULAWESI','Sulawesi',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sulawesi</button>
             </div>
           </div>
           <!-- Upload button (marketing only) -->
