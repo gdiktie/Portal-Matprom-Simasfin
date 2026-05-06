@@ -587,23 +587,6 @@
       <!-- Hidden month-tabs div (kept for JS compatibility) -->
       <div id="month-tabs" style="display:none;"></div>
       <div class="flex flex-wrap gap-2" id="cat-tabs"><button class="cat-btn active" onclick="filterCat('all',this)">Semua</button></div>
-      <!-- REGIONAL FILTER -->
-      <div class="flex items-center gap-2 mt-2 flex-wrap">
-        <span class="text-xs font-semibold text-gray-400" style="white-space:nowrap;"><i class="fa-solid fa-map-marker-alt mr-1"></i>Regional:</span>
-        <div class="flex flex-wrap gap-1.5" id="reg-tabs">
-          <button class="reg-btn active" onclick="filterReg('ALL REGION',this)">Semua Regional</button>
-          <button class="reg-btn" onclick="filterReg('JABODETABEK',this)">Jabodetabek</button>
-          <button class="reg-btn" onclick="filterReg('SUMBAGUT',this)">Sumbagut</button>
-          <button class="reg-btn" onclick="filterReg('KALIMANTAN',this)">Kalimantan</button>
-          <button class="reg-btn" onclick="filterReg('INTIM',this)">Intim</button>
-          <button class="reg-btn" onclick="filterReg('JATIM',this)">Jatim</button>
-          <button class="reg-btn" onclick="filterReg('JATENG',this)">Jateng</button>
-          <button class="reg-btn" onclick="filterReg('JABAR',this)">Jabar</button>
-          <button class="reg-btn" onclick="filterReg('BALI NUSRA',this)">Bali Nusra</button>
-          <button class="reg-btn" onclick="filterReg('SUMBAGSEL',this)">Sumbagsel</button>
-          <button class="reg-btn" onclick="filterReg('SULAWESI',this)">Sulawesi</button>
-        </div>
-      </div>
     </div>
 
     <!-- SEGMENTS: dirender dinamis oleh JS berdasarkan data bulan aktif -->
@@ -855,12 +838,17 @@
           <div>
             <label class="input-label">Regional</label>
             <select id="up-regional" class="input-field">
-              <option value="ALL REGION">-- Semua --</option>
-              <option value="REGIONAL 1">Regional 1</option>
-              <option value="REGIONAL 2">Regional 2</option>
-              <option value="REGIONAL 3">Regional 3</option>
-              <option value="REGIONAL 4">Regional 4</option>
-              <option value="REGIONAL 5">Regional 5</option>
+              <option value="ALL REGION">Semua Regional</option>
+              <option value="JABODETABEK">Jabodetabek</option>
+              <option value="SUMBAGUT">Sumbagut</option>
+              <option value="KALIMANTAN">Kalimantan</option>
+              <option value="INTIM">Intim</option>
+              <option value="JATIM">Jatim</option>
+              <option value="JATENG">Jateng</option>
+              <option value="JABAR">Jabar</option>
+              <option value="BALI NUSRA">Bali Nusra</option>
+              <option value="SUMBAGSEL">Sumbagsel</option>
+              <option value="SULAWESI">Sulawesi</option>
             </select>
           </div>
         </div>
@@ -953,12 +941,17 @@
           <div>
             <label class="input-label">Regional</label>
             <select id="edit-regional" class="input-field">
-              <option value="ALL REGION">-- Semua --</option>
-              <option value="REGIONAL 1">Regional 1</option>
-              <option value="REGIONAL 2">Regional 2</option>
-              <option value="REGIONAL 3">Regional 3</option>
-              <option value="REGIONAL 4">Regional 4</option>
-              <option value="REGIONAL 5">Regional 5</option>
+              <option value="ALL REGION">Semua Regional</option>
+              <option value="JABODETABEK">Jabodetabek</option>
+              <option value="SUMBAGUT">Sumbagut</option>
+              <option value="KALIMANTAN">Kalimantan</option>
+              <option value="INTIM">Intim</option>
+              <option value="JATIM">Jatim</option>
+              <option value="JATENG">Jateng</option>
+              <option value="JABAR">Jabar</option>
+              <option value="BALI NUSRA">Bali Nusra</option>
+              <option value="SUMBAGSEL">Sumbagsel</option>
+              <option value="SULAWESI">Sulawesi</option>
             </select>
           </div>
         </div>
@@ -1394,6 +1387,8 @@ function buildMonthTabs() {
   document.addEventListener('click', (e) => {
     const wrap = document.getElementById('month-dropdown-wrap');
     if (wrap && !wrap.contains(e.target)) closeMonthDropdown();
+    const regWrap = document.getElementById('reg-dropdown-wrap');
+    if (regWrap && !regWrap.contains(e.target)) closeRegDropdown();
   });
 }
 
@@ -1425,6 +1420,34 @@ function selectMonth(month, btn) {
   closeMonthDropdown();
   activeCat = 'all';
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === 'Semua'));
+  renderCards();
+}
+
+function toggleRegDropdown() {
+  const list = document.getElementById('reg-dropdown-list');
+  const isOpen = list.style.display !== 'none';
+  if (isOpen) closeRegDropdown();
+  else {
+    list.style.display = 'block';
+    document.getElementById('reg-dropdown-btn').style.borderColor = 'var(--navy)';
+    document.getElementById('reg-chevron').style.transform = 'rotate(180deg)';
+  }
+}
+
+function closeRegDropdown() {
+  const list = document.getElementById('reg-dropdown-list');
+  if (!list) return;
+  list.style.display = 'none';
+  document.getElementById('reg-dropdown-btn').style.borderColor = 'var(--border)';
+  document.getElementById('reg-chevron').style.transform = '';
+}
+
+function selectReg(reg, label, btn) {
+  activeReg = reg;
+  document.querySelectorAll('.reg-dd-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('reg-dropdown-label').textContent = label;
+  closeRegDropdown();
   renderCards();
 }
 
@@ -2854,8 +2877,6 @@ function filterCat(cat, btn) {
 
 function filterReg(reg, btn) {
   activeReg = reg;
-  document.querySelectorAll('.reg-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
   renderCards();
 }
 
