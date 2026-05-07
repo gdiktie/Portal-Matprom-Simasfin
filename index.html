@@ -1232,7 +1232,7 @@ function normalizeItem(item) {
     driveUrl     : item.driveUrl || (urls.length > 0 ? urls[0] : null),
     driveFolderId: item.driveFolderId || null,
     fileIds, fileNames,
-    regional     : item.regional || '', // kosong = belum ada data dari server, cache yg tentukan
+    regional     : item.regional != null ? String(item.regional).trim() : null, // null = server tidak punya data, cache yang tentukan
   };
 }
 
@@ -1263,11 +1263,19 @@ function mergeMediaLocalCache(items) {
       const serverUrls  = parseUrls(item.driveUrls);
       const cachedUrls  = parseUrls(c.driveUrls);
 
-      // Regional: server bisa kirim kosong jika kolom belum ada di Sheet lama.
-      // Prioritas: server jika ada & bukan kosong → cache → fallback 'ALL REGION'
-      const serverReg = (item.regional || '').trim();
-      const cacheReg  = (c.regional   || '').trim();
-      const resolvedReg = serverReg || cacheReg || 'ALL REGION';
+      // Regional: server bisa kirim null/kosong jika kolom belum ada di Sheet lama.
+      // Prioritas:
+      //   1. Nilai dari cache (hasil upload/edit user) — paling dipercaya
+      //   2. Nilai dari server jika cache tidak ada
+      //   3. Fallback 'ALL REGION'
+      // Cache SELALU menang vs server untuk field regional, karena server sering kirim kosong
+      // untuk item lama (kolom regional baru ditambahkan ke Sheet).
+      const serverReg = (item.regional != null && String(item.regional).trim() !== '')
+        ? String(item.regional).trim().toUpperCase() : null;
+      const cacheReg  = (c.regional && String(c.regional).trim() !== '')
+        ? String(c.regional).trim().toUpperCase() : null;
+      // Cache menang: jika ada di cache, pakai cache; baru fallback ke server; lalu 'ALL REGION'
+      const resolvedReg = cacheReg || serverReg || 'ALL REGION';
 
       return {
         ...item,
@@ -1306,7 +1314,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved) {
     currentUser = JSON.parse(saved);
     await loadMediaFromSheets();
-    saveMediaLocalCache();
+    // ✅ JANGAN saveMediaLocalCache() di sini — server bisa kirim regional kosong
+    // dan akan overwrite cache yang valid. Cache hanya disimpan saat user aksi (upload/edit/delete).
     onLoginSuccess();
 
     setInterval(async () => {
