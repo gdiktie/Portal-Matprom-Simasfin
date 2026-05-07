@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1105,7 +1106,7 @@ const BRANCHES = [
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // ── GANTI dengan URL Deploy Apps Script kamu ─────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbztsoEvOnl9vcCXLY0S2A7eSJQMTdbOjkR_VVGgME049IL4qXdTIvNPBTCtkEsL5laGZQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxjWYpLbdNyUd5gCA7jD_RETDe-cfiDEQwiHNDRBdp4jVaXVQ-v7HLuhVeTdTRfuaO__g/exec';
 // ─────────────────────────────────────────────────────────────
 
 let currentUser = null;
@@ -1163,7 +1164,37 @@ async function apiPost(action, payload = {}) {
 // ===== THUMB / DESKRIPSI / DRIVEURL CACHE (localStorage) =====
 // Google Sheets TIDAK bisa menyimpan base64 thumbnail.
 // Setiap server fetch, thumb/thumbs selalu null. Simpan di localStorage per-ID.
-const MEDIA_CACHE_KEY = 'sm_media_local_v1';
+const MEDIA_CACHE_KEY    = 'sm_media_local_v1';
+const REGIONAL_LOCK_KEY  = 'sm_regional_lock_v1'; // ✅ cache regional terpisah — hanya ditulis saat upload/edit
+
+// ── Regional Lock Store ──────────────────────────────────────
+// Menyimpan { [id]: 'SULAWESI' } — TIDAK PERNAH ditimpa oleh load/refresh dari server.
+// Hanya diupdate saat user secara eksplisit upload atau edit item.
+function saveRegionalLock(id, regional) {
+  try {
+    const raw   = localStorage.getItem(REGIONAL_LOCK_KEY);
+    const store = raw ? JSON.parse(raw) : {};
+    store[String(id)] = (regional || 'ALL REGION').toUpperCase().trim();
+    localStorage.setItem(REGIONAL_LOCK_KEY, JSON.stringify(store));
+  } catch(e) {}
+}
+function getRegionalLock(id) {
+  try {
+    const raw = localStorage.getItem(REGIONAL_LOCK_KEY);
+    if (!raw) return null;
+    const store = JSON.parse(raw);
+    return store[String(id)] || null;
+  } catch(e) { return null; }
+}
+function deleteRegionalLock(id) {
+  try {
+    const raw = localStorage.getItem(REGIONAL_LOCK_KEY);
+    if (!raw) return;
+    const store = JSON.parse(raw);
+    delete store[String(id)];
+    localStorage.setItem(REGIONAL_LOCK_KEY, JSON.stringify(store));
+  } catch(e) {}
+}
 
 // ✅ Helper: normalisasi driveUrls — Google Sheets bisa kembalikan string JSON, bukan array
 function parseUrls(val) {
@@ -1232,7 +1263,7 @@ function normalizeItem(item) {
     driveUrl     : item.driveUrl || (urls.length > 0 ? urls[0] : null),
     driveFolderId: item.driveFolderId || null,
     fileIds, fileNames,
-    regional     : item.regional != null ? String(item.regional).trim() : null, // null = server tidak punya data, cache yang tentukan
+    regional     : null, // ✅ regional TIDAK diambil dari server — selalu dari localStorage lock/cache di mergeMediaLocalCache
   };
 }
 
@@ -1240,6 +1271,9 @@ function saveMediaLocalCache() {
   try {
     const cache = {};
     mediaData.forEach(item => {
+      // ✅ Untuk regional: selalu cek lock store dulu — lock adalah sumber kebenaran tertinggi
+      const lockReg = getRegionalLock(item.id);
+      const resolvedReg = lockReg || (item.regional && item.regional !== '' ? item.regional : null) || 'ALL REGION';
       cache[String(item.id)] = {
         thumb        : item.thumb          || null,
         thumbs       : item.thumbs         || [],
@@ -1247,7 +1281,7 @@ function saveMediaLocalCache() {
         driveUrl     : item.driveUrl       || null,
         driveUrls    : parseUrls(item.driveUrls),
         driveFolderId: item.driveFolderId  || null,
-        regional     : (item.regional || 'ALL REGION'), // selalu simpan nilai resolved
+        regional     : resolvedReg,
       };
     });
     localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
@@ -1263,19 +1297,29 @@ function mergeMediaLocalCache(items) {
       const serverUrls  = parseUrls(item.driveUrls);
       const cachedUrls  = parseUrls(c.driveUrls);
 
-      // Regional: server bisa kirim null/kosong jika kolom belum ada di Sheet lama.
+      // Regional — HANYA dari localStorage, TIDAK PERNAH dari server.
+      // Server sering mengembalikan regional kosong/salah (kolom baru / Apps Script lama).
+      // Satu-satunya yang bisa mengubah regional adalah aksi eksplisit user (upload/edit).
+      //
       // Prioritas:
-      //   1. Nilai dari cache (hasil upload/edit user) — paling dipercaya
-      //   2. Nilai dari server jika cache tidak ada
-      //   3. Fallback 'ALL REGION'
-      // Cache SELALU menang vs server untuk field regional, karena server sering kirim kosong
-      // untuk item lama (kolom regional baru ditambahkan ke Sheet).
-      const serverReg = (item.regional != null && String(item.regional).trim() !== '')
-        ? String(item.regional).trim().toUpperCase() : null;
-      const cacheReg  = (c.regional && String(c.regional).trim() !== '')
+      //   1. REGIONAL_LOCK_KEY  — ditulis hanya saat upload/edit, tidak pernah ditimpa refresh
+      //   2. Cache sm_media_local_v1 — hasil saveMediaLocalCache sebelumnya
+      //   3. Server              — HANYA jika lock & cache benar-benar kosong (item baru di device lain)
+      //   4. Fallback 'ALL REGION'
+      const lockReg  = getRegionalLock(item.id);
+      const cacheReg = (c.regional && String(c.regional).trim() !== '')
         ? String(c.regional).trim().toUpperCase() : null;
-      // Cache menang: jika ada di cache, pakai cache; baru fallback ke server; lalu 'ALL REGION'
-      const resolvedReg = cacheReg || serverReg || 'ALL REGION';
+      // Server hanya dipakai jika lock DAN cache kosong — mencegah server overwrite nilai user
+      const serverReg = (!lockReg && !cacheReg &&
+                         item.regional != null &&
+                         String(item.regional).trim() !== '' &&
+                         String(item.regional).trim() !== 'undefined')
+        ? String(item.regional).trim().toUpperCase() : null;
+      const resolvedReg = lockReg || cacheReg || serverReg || 'ALL REGION';
+      // Promosikan ke lock agar terlindungi di refresh berikutnya
+      if (!lockReg && (cacheReg || serverReg)) {
+        saveRegionalLock(item.id, resolvedReg);
+      }
 
       return {
         ...item,
@@ -2896,9 +2940,9 @@ async function doRefreshMedia() {
   try {
     const resp = await apiCall('getMedia');
     if (resp.ok && Array.isArray(resp.data)) {
-      // ✅ Normalisasi sama seperti loadMediaFromSheets agar locked & deskripsi konsisten
+      // ✅ merge pakai Regional Lock Store — regional tidak akan ditimpa data server
       mediaData = mergeMediaLocalCache(resp.data.map(normalizeItem));
-      saveMediaLocalCache(); // ✅ simpan ke localStorage
+      // JANGAN saveMediaLocalCache() di sini — akan menimpa regional lock dengan data server yang kosong
       renderCards();
       showToast('success', 'Data berhasil diperbarui dari server');
     }
@@ -3031,7 +3075,8 @@ async function doUpload() {
     };
     try { await apiPost('addMedia', { item: newItem }); } catch(e) {}
     mediaData.unshift(newItem);
-    saveMediaLocalCache(); // ✅ simpan ke localStorage
+    saveRegionalLock(newItem.id, regional); // ✅ kunci regional — tidak akan ditimpa refresh
+    saveMediaLocalCache();
     btn.disabled = false;
     closeModal('upload');
     activeMonth = bulan;
@@ -3146,6 +3191,9 @@ async function doUpload() {
     }
 
     mediaData.unshift(combinedItem);
+    saveRegionalLock(combinedItem.id, regional); // ✅ kunci regional — tidak akan ditimpa refresh
+    // Bersihkan lock untuk tempIds sisa (sudah dihapus dari sheet)
+    for (let i = 1; i < tempIds.length; i++) deleteRegionalLock(tempIds[i]);
     saveMediaLocalCache();
 
     setProgress(btn, 100, 'Berhasil!');
@@ -3246,7 +3294,10 @@ function openEdit(id) {
   document.getElementById('edit-deskripsi').value = item.deskripsi || '';
   document.getElementById('edit-locked').checked = !!item.locked;
   if (document.getElementById('edit-regional')) {
-    document.getElementById('edit-regional').value = (item.regional || 'ALL REGION').toUpperCase().trim();
+    // ✅ Ambil dari lock store (sumber kebenaran) bukan item.regional yang bisa salah
+    const lockReg = getRegionalLock(item.id);
+    const editRegVal = lockReg || (item.regional && item.regional !== '' ? item.regional.toUpperCase().trim() : 'ALL REGION');
+    document.getElementById('edit-regional').value = editRegVal;
   }
   document.getElementById('edit-file-name').classList.add('hidden');
   document.getElementById('edit-file').value = '';
@@ -3316,6 +3367,7 @@ async function doEdit() {
     if (!result || result.ok === false) throw new Error(result ? result.msg : 'Server menolak');
     // Sukses: tutup modal dan render
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
+    saveRegionalLock(updatedItem.id, regional); // ✅ kunci regional sesuai pilihan edit
     saveMediaLocalCache(); // ✅ simpan regional & semua field ke cache
     closeModal('edit');
     activeMonth = bulan;
@@ -3375,6 +3427,7 @@ async function deleteCard(id) {
   }
 
   mediaData = mediaData.filter(d => d.id !== id);
+  deleteRegionalLock(id); // ✅ bersihkan lock regional item yang dihapus
   renderCards();
   showToast('success', `"${item.title}" berhasil dihapus`);
 }
