@@ -1245,6 +1245,7 @@ function saveMediaLocalCache() {
         driveUrl     : item.driveUrl       || null,
         driveUrls    : parseUrls(item.driveUrls),
         driveFolderId: item.driveFolderId  || null,
+        regional     : item.regional       || 'ALL REGION',
       };
     });
     localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
@@ -1267,7 +1268,11 @@ function mergeMediaLocalCache(items) {
         driveUrl     : item.driveUrl       || c.driveUrl       || null,
         driveFolderId: item.driveFolderId  || c.driveFolderId  || null,
         // ✅ Pakai dari cache jika server tidak kirim array (atau kirim array kosong)
-        driveUrls: serverUrls.length > 0 ? serverUrls : cachedUrls,
+        driveUrls    : serverUrls.length > 0 ? serverUrls : cachedUrls,
+        // ✅ Regional: prioritas server, fallback ke cache, fallback ke ALL REGION
+        regional     : (item.regional && item.regional !== 'ALL REGION')
+                         ? item.regional
+                         : (c.regional || item.regional || 'ALL REGION'),
       };
     });
   } catch(e) { return items; }
