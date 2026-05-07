@@ -2643,11 +2643,11 @@ function renderCards() {
     ? mediaData.filter(d => d.month === activeMonth)
     : mediaData.slice();
 
-  // Filter regional: 'ALL REGION' tampilkan semua; regional lain tampilkan yg match atau yg 'ALL REGION'
+  // Filter regional: persis seperti filter bulan — hanya tampilkan yang exact match
   if (activeReg && activeReg !== 'ALL REGION') {
     filtered = filtered.filter(d => {
       const reg = (d.regional || 'ALL REGION').toUpperCase().trim();
-      return reg === 'ALL REGION' || reg === activeReg.toUpperCase().trim();
+      return reg === activeReg.toUpperCase().trim();
     });
   }
 
@@ -2823,17 +2823,16 @@ function buildCard(item) {
   const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
   const clickable = (!locked || mkt);
 
-  // Regional tag - always show
+  // Regional tag - hanya tampil jika materi punya region spesifik
   const regValue = (item.regional || 'ALL REGION').toUpperCase().trim();
   const REG_LABELS = {
-    'ALL REGION':'Semua Regional',
     'JABODETABEK':'Jabodetabek','SUMBAGUT':'Sumbagut','KALIMANTAN':'Kalimantan',
     'INTIM':'Intim','JATIM':'Jatim','JATENG':'Jateng','JABAR':'Jabar',
     'BALI NUSRA':'Bali Nusra','SUMBAGSEL':'Sumbagsel','SULAWESI':'Sulawesi'
   };
-  const regLabel = REG_LABELS[regValue] || regValue;
-  const regIsAll = regValue === 'ALL REGION';
-  const regTagHtml = `<span class="reg-tag" style="${regIsAll ? 'background:#f0f3fb;color:#6B7A99;border-color:#c7d0e4;' : 'background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;'}"><i class="fa-solid fa-${regIsAll ? 'globe' : 'map-marker-alt'}"></i>${regLabel}</span>`;
+  const regTagHtml = (regValue !== 'ALL REGION' && REG_LABELS[regValue])
+    ? `<span class="reg-tag" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"><i class="fa-solid fa-map-marker-alt"></i>${REG_LABELS[regValue]}</span>`
+    : '';
 
   return `
   <div class="${cardClass}" id="card-${item.id}">
