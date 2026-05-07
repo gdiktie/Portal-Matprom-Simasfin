@@ -722,15 +722,9 @@
           <label class="input-label">Nama Lengkap <span class="text-red-500">*</span></label>
           <input type="text" id="reg-nama" placeholder="Nama sesuai KTP" class="input-field">
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="input-label">NIK (KTP) <span class="text-red-500">*</span></label>
-            <input type="text" id="reg-nik" placeholder="16 digit NIK" maxlength="16" class="input-field" oninput="this.value=this.value.replace(/\D/g,'')">
-          </div>
-          <div>
-            <label class="input-label">No. ID Card <span class="text-red-500">*</span></label>
-            <input type="text" id="reg-idcard" placeholder="8 digit ID Card" maxlength="8" class="input-field" oninput="this.value=this.value.replace(/\D/g,'')">
-          </div>
+        <div>
+          <label class="input-label">No. ID Card <span class="text-red-500">*</span></label>
+          <input type="text" id="reg-idcard" placeholder="8 digit ID Card" maxlength="8" class="input-field" oninput="this.value=this.value.replace(/\D/g,'')">
         </div>
         <div>
           <label class="input-label">Email Kantor <span class="text-red-500">*</span></label>
@@ -2543,7 +2537,6 @@ async function doLogin() {
 
 async function doRegister() {
   const nama = document.getElementById('reg-nama').value.trim();
-  const nik = document.getElementById('reg-nik').value.trim();
   const idcard = document.getElementById('reg-idcard').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const telp = document.getElementById('reg-telp').value.trim();
@@ -2553,10 +2546,9 @@ async function doRegister() {
     ? document.getElementById('reg-unit-input').value
     : document.getElementById('reg-cabang-select').value;
 
-  if (!nama || !nik || !idcard || !email || !telp || !pwd || !unit) {
+  if (!nama || !idcard || !email || !telp || !pwd || !unit) {
     showToast('error', 'Harap isi semua field'); return;
   }
-  if (nik.length !== 16) { showToast('error', 'NIK harus 16 digit'); return; }
   if (idcard.length !== 8) { showToast('error', 'ID Card harus 8 digit'); return; }
   if (!email.endsWith('@simasfinance.co.id')) { showToast('error', 'Email harus @simasfinance.co.id'); return; }
   if (pwd.length < 8) { showToast('error', 'Password minimal 8 karakter'); return; }
@@ -2568,7 +2560,7 @@ async function doRegister() {
 
   try {
     const resp = await apiCall('register', {
-      nama, nik, idcard8: idcard, idcard4: idcard.substring(0, 4),
+      nama, idcard8: idcard, idcard4: idcard.substring(0, 4),
       email, telp, cabang: unit, role: registerTabMode, password: pwd
     });
     if (resp.ok) {
