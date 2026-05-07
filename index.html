@@ -1230,7 +1230,7 @@ function normalizeItem(item) {
     driveUrl     : item.driveUrl || (urls.length > 0 ? urls[0] : null),
     driveFolderId: item.driveFolderId || null,
     fileIds, fileNames,
-    regional     : item.regional || 'ALL REGION',
+    regional     : item.regional || '', // kosong = belum ada data dari server, cache yg tentukan
   };
 }
 
@@ -1245,7 +1245,7 @@ function saveMediaLocalCache() {
         driveUrl     : item.driveUrl       || null,
         driveUrls    : parseUrls(item.driveUrls),
         driveFolderId: item.driveFolderId  || null,
-        regional     : item.regional       || 'ALL REGION',
+        regional     : (item.regional || 'ALL REGION'), // selalu simpan nilai resolved
       };
     });
     localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(cache));
@@ -1260,6 +1260,13 @@ function mergeMediaLocalCache(items) {
       const c = cache[String(item.id)] || {};
       const serverUrls  = parseUrls(item.driveUrls);
       const cachedUrls  = parseUrls(c.driveUrls);
+
+      // Regional: server bisa kirim kosong jika kolom belum ada di Sheet lama.
+      // Prioritas: server jika ada & bukan kosong → cache → fallback 'ALL REGION'
+      const serverReg = (item.regional || '').trim();
+      const cacheReg  = (c.regional   || '').trim();
+      const resolvedReg = serverReg || cacheReg || 'ALL REGION';
+
       return {
         ...item,
         thumb        : item.thumb          || c.thumb          || null,
@@ -1267,12 +1274,8 @@ function mergeMediaLocalCache(items) {
         deskripsi    : item.deskripsi      || c.deskripsi      || '',
         driveUrl     : item.driveUrl       || c.driveUrl       || null,
         driveFolderId: item.driveFolderId  || c.driveFolderId  || null,
-        // ✅ Pakai dari cache jika server tidak kirim array (atau kirim array kosong)
         driveUrls    : serverUrls.length > 0 ? serverUrls : cachedUrls,
-        // ✅ Regional: prioritas server, fallback ke cache, fallback ke ALL REGION
-        regional     : (item.regional && item.regional !== 'ALL REGION')
-                         ? item.regional
-                         : (c.regional || item.regional || 'ALL REGION'),
+        regional     : resolvedReg,
       };
     });
   } catch(e) { return items; }
@@ -2831,13 +2834,17 @@ function buildCard(item) {
   // Regional tag - hanya tampil jika materi punya region spesifik
   const regValue = (item.regional || 'ALL REGION').toUpperCase().trim();
   const REG_LABELS = {
+    'ALL REGION' :'Semua Regional',
     'JABODETABEK':'Jabodetabek','SUMBAGUT':'Sumbagut','KALIMANTAN':'Kalimantan',
     'INTIM':'Intim','JATIM':'Jatim','JATENG':'Jateng','JABAR':'Jabar',
     'BALI NUSRA':'Bali Nusra','SUMBAGSEL':'Sumbagsel','SULAWESI':'Sulawesi'
   };
-  const regTagHtml = (regValue !== 'ALL REGION' && REG_LABELS[regValue])
-    ? `<span class="reg-tag" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"><i class="fa-solid fa-map-marker-alt"></i>${REG_LABELS[regValue]}</span>`
-    : '';
+  const regLabel = REG_LABELS[regValue] || regValue;
+  const regTagHtml = regValue === 'ALL REGION'
+    ? `<span class="reg-tag" style="background:#f0f3fb;color:#6B7A99;border-color:#c7d0e4;"><i class="fa-solid fa-globe"></i>${regLabel}</span>`
+    : (REG_LABELS[regValue]
+        ? `<span class="reg-tag" style="background:#e8f5e9;color:#2e7d32;border-color:#a5d6a7;"><i class="fa-solid fa-map-marker-alt"></i>${regLabel}</span>`
+        : '');
 
   return `
   <div class="${cardClass}" id="card-${item.id}">
@@ -3274,6 +3281,7 @@ async function doEdit() {
     if (!result || result.ok === false) throw new Error(result ? result.msg : 'Server menolak');
     // Sukses: tutup modal dan render
     btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>Simpan Perubahan';
+    saveMediaLocalCache(); // ✅ simpan regional & semua field ke cache
     closeModal('edit');
     activeMonth = bulan;
     document.getElementById('month-dropdown-label').textContent = bulan;
