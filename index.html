@@ -838,6 +838,7 @@
           <div>
             <label class="input-label">Regional</label>
             <select id="up-regional" class="input-field">
+              <option value="">-- Pilih --</option>
               <option value="ALL REGION">Semua Regional</option>
               <option value="BALI NUSRA">Bali Nusra</option>
               <option value="INTIM">Intim</option>
@@ -941,6 +942,7 @@
           <div>
             <label class="input-label">Regional</label>
             <select id="edit-regional" class="input-field">
+              <option value="">-- Pilih --</option>
               <option value="ALL REGION">Semua Regional</option>
               <option value="BALI NUSRA">Bali Nusra</option>
               <option value="INTIM">Intim</option>
@@ -2989,6 +2991,7 @@ async function doUpload() {
   const deskripsi = document.getElementById('up-deskripsi') ? document.getElementById('up-deskripsi').value.trim() : '';
   const isLocked  = !!(document.getElementById('up-locked') && document.getElementById('up-locked').checked);
   const regional  = (document.getElementById('up-regional') ? document.getElementById('up-regional').value : '') || 'ALL REGION';
+  const regionalResolved = regional || 'ALL REGION';
 
   const btn = document.querySelector('#modal-upload .btn-red-full');
   btn.disabled = true;
@@ -3025,6 +3028,8 @@ async function doUpload() {
     activeMonth = bulan;
     document.getElementById('month-dropdown-label').textContent = bulan;
     document.querySelectorAll('.month-dd-item').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
+    // ✅ Sync activeReg agar pill regional langsung muncul sesuai pilihan upload
+    syncRegAfterUpload(regionalResolved);
     renderCards();
     showToast('success', 'Materi berhasil disimpan!');
     resetUploadForm();
@@ -3141,6 +3146,8 @@ async function doUpload() {
     activeMonth = bulan;
     document.getElementById('month-dropdown-label').textContent = bulan;
     document.querySelectorAll('.month-dd-item').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
+    // ✅ Sync activeReg agar pill regional langsung muncul sesuai pilihan upload
+    syncRegAfterUpload(regionalResolved);
     renderCards();
     showToast('success', totalFiles > 1
       ? `${totalFiles} file berhasil diupload ke Drive!`
@@ -3154,11 +3161,29 @@ async function doUpload() {
   }
 }
 
+// ✅ Sync navbar regional dropdown setelah upload agar pill langsung tampil sesuai pilihan
+function syncRegAfterUpload(regionalValue) {
+  const REG_LABELS = {
+    'ALL REGION':'Semua Regional',
+    'JABODETABEK':'Jabodetabek','SUMBAGUT':'Sumbagut','KALIMANTAN':'Kalimantan',
+    'INTIM':'Intim','JATIM':'Jatim','JATENG':'Jateng','JABAR':'Jabar',
+    'BALI NUSRA':'Bali Nusra','SUMBAGSEL':'Sumbagsel','SULAWESI':'Sulawesi'
+  };
+  const reg = (regionalValue || 'ALL REGION').toUpperCase().trim();
+  const label = REG_LABELS[reg] || reg;
+  activeReg = reg;
+  const labelEl = document.getElementById('reg-dropdown-label');
+  if (labelEl) labelEl.textContent = label;
+  document.querySelectorAll('.reg-dd-item').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim() === label);
+  });
+}
+
 function resetUploadForm() {
   document.getElementById('up-judul').value    = '';
   document.getElementById('up-kategori').value = '';
   document.getElementById('up-bulan').value    = '';
-  if (document.getElementById('up-regional')) document.getElementById('up-regional').value = 'ALL REGION';
+  if (document.getElementById('up-regional')) document.getElementById('up-regional').value = '';
   document.getElementById('up-isnew').checked  = false;
   document.getElementById('up-locked').checked = false;
   document.getElementById('up-deskripsi').value = '';
