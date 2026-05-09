@@ -2600,7 +2600,7 @@ function onLoginSuccess() {
     };
     const regKey = (currentUser.cabang || '').toUpperCase().trim();
     const regTitle = REG_TITLE[regKey] || currentUser.cabang || '';
-    roleLabel = 'REGIONAL · ' + regTitle;
+    roleLabel = 'Regional · ' + regTitle;
   }
   document.getElementById('nav-role').innerHTML = roleLabel;
 
