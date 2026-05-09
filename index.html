@@ -136,9 +136,6 @@
   .month-dd-item.active { background:var(--red); color:#fff; }
 
   /* REGIONAL DROPDOWN */
-  .reg-dd-item { display:flex; align-items:center; gap:7px; width:100%; text-align:left; padding:8px 12px; border:none; background:transparent; font-size:.82rem; font-weight:600; color:var(--muted); border-radius:8px; cursor:pointer; transition:background .12s, color .12s; }
-  .reg-dd-item:hover { background:#eef1fb; color:var(--navy); }
-  .reg-dd-item.active { background:var(--navy); color:#fff; }
 
   /* FOOTER */
   footer { background: var(--navy); color: rgba(255,255,255,.6); }
@@ -545,33 +542,6 @@
                 <i class="fa-solid fa-layer-group" style="font-size:.72rem;opacity:.6;"></i> Semua Bulan
               </button>
               <div style="height:1px;background:var(--border);margin:5px 0;"></div>
-            </div>
-          </div>
-          <!-- Regional Dropdown -->
-          <div class="relative flex-shrink-0" id="reg-dropdown-wrap">
-            <button id="reg-dropdown-btn" onclick="toggleRegDropdown()"
-              style="background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:9px 14px;font-size:.82rem;font-weight:600;color:var(--navy);cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap;min-width:150px;transition:border-color .15s;"
-              onmouseover="this.style.borderColor='var(--navy)'" onmouseout="if(!document.getElementById('reg-dropdown-list').classList.contains('open'))this.style.borderColor='var(--border)'">
-              <i class="fa-solid fa-map-marker-alt" style="font-size:.8rem;color:var(--navy);"></i>
-              <span id="reg-dropdown-label">Semua Regional</span>
-              <i class="fa-solid fa-chevron-down text-gray-400 ml-auto" style="font-size:.65rem;" id="reg-chevron"></i>
-            </button>
-            <div id="reg-dropdown-list"
-              style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1.5px solid var(--border);border-radius:12px;box-shadow:0 8px 30px rgba(26,35,64,.12);z-index:200;min-width:180px;padding:6px;overflow:hidden;">
-              <button class="reg-dd-item active" onclick="selectReg('ALL REGION', 'Semua Regional', this)">
-                <i class="fa-solid fa-globe" style="font-size:.72rem;opacity:.6;"></i> Semua Regional
-              </button>
-              <div style="height:1px;background:var(--border);margin:5px 0;"></div>
-              <button class="reg-dd-item" onclick="selectReg('BALI NUSRA','Bali Nusra',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Bali Nusra</button>
-              <button class="reg-dd-item" onclick="selectReg('INTIM','Intim',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Intim</button>
-              <button class="reg-dd-item" onclick="selectReg('JABAR','Jabar',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jabar</button>
-              <button class="reg-dd-item" onclick="selectReg('JABODETABEK','Jabodetabek',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jabodetabek</button>
-              <button class="reg-dd-item" onclick="selectReg('JATENG','Jateng',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jateng</button>
-              <button class="reg-dd-item" onclick="selectReg('JATIM','Jatim',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Jatim</button>
-              <button class="reg-dd-item" onclick="selectReg('KALIMANTAN','Kalimantan',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Kalimantan</button>
-              <button class="reg-dd-item" onclick="selectReg('SUMBAGSEL','Sumbagsel',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sumbagsel</button>
-              <button class="reg-dd-item" onclick="selectReg('SUMBAGUT','Sumbagut',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sumbagut</button>
-              <button class="reg-dd-item" onclick="selectReg('SULAWESI','Sulawesi',this)"><i class="fa-solid fa-location-dot" style="font-size:.72rem;opacity:.5;"></i> Sulawesi</button>
             </div>
           </div>
           <!-- Upload button (marketing only) -->
@@ -1116,7 +1086,6 @@ let currentUser = null;
 let mediaData = [];              // ✅ deklarasi global
 let activeMonth = "";
 let activeCat = "all";
-let activeReg = "ALL REGION";
 let selectedDownloadId = null;
 let loginTabMode = "kpno";
 let registerTabMode = "kpno";
@@ -1454,8 +1423,6 @@ function buildMonthTabs() {
     const monthWrap = document.getElementById('month-dropdown-wrap');
     if (monthWrap && !monthWrap.contains(e.target)) closeMonthDropdown();
 
-    const regWrap = document.getElementById('reg-dropdown-wrap');
-    if (regWrap && !regWrap.contains(e.target)) closeRegDropdown();
   });
 }
 
@@ -1490,44 +1457,6 @@ function selectMonth(month, btn) {
   renderCards();
 }
 
-function toggleRegDropdown() {
-  const list = document.getElementById('reg-dropdown-list');
-  const isOpen = list.classList.contains('open');
-  if (isOpen) closeRegDropdown();
-  else {
-    list.style.display = 'block';
-    list.classList.add('open');
-    document.getElementById('reg-dropdown-btn').style.borderColor = 'var(--navy)';
-    document.getElementById('reg-chevron').style.transform = 'rotate(180deg)';
-  }
-}
-
-function closeRegDropdown() {
-  const list = document.getElementById('reg-dropdown-list');
-  if (!list) return;
-  list.style.display = 'none';
-  list.classList.remove('open');
-  document.getElementById('reg-dropdown-btn').style.borderColor = 'var(--border)';
-  document.getElementById('reg-chevron').style.transform = '';
-}
-
-function selectReg(reg, label, btn) {
-  activeReg = reg;
-  document.querySelectorAll('.reg-dd-item').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('reg-dropdown-label').textContent = label;
-  // Close dropdown
-  const list = document.getElementById('reg-dropdown-list');
-  if (list) { list.style.display = 'none'; list.classList.remove('open'); }
-  const chevron = document.getElementById('reg-chevron');
-  if (chevron) chevron.style.transform = '';
-  const dropBtn = document.getElementById('reg-dropdown-btn');
-  if (dropBtn) dropBtn.style.borderColor = 'var(--border)';
-  // Reset cat to all and render
-  activeCat = 'all';
-  document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === 'Semua'));
-  renderCards();
-}
 
 function populateBranches() {
   const sel = document.getElementById('reg-cabang-select');
@@ -2664,7 +2593,7 @@ function onLoginSuccess() {
       roleLabel = divisi ? 'KPNO \u00b7 ' + divisi : 'KPNO';
     }
   } else {
-    roleLabel = 'Cabang \u00b7 ' + currentUser.cabang;
+    roleLabel = 'REGIONAL \u00b7 ' + (currentUser.cabang || '').toUpperCase();
   }
   document.getElementById('nav-role').innerHTML = roleLabel;
 
@@ -2735,14 +2664,6 @@ function renderCards() {
   let filtered = activeMonth
     ? mediaData.filter(d => d.month === activeMonth)
     : mediaData.slice();
-
-  // Filter regional: persis seperti filter bulan — hanya tampilkan yang exact match
-  if (activeReg && activeReg !== 'ALL REGION') {
-    filtered = filtered.filter(d => {
-      const reg = (d.regional || 'ALL REGION').toUpperCase().trim();
-      return reg === activeReg.toUpperCase().trim();
-    });
-  }
 
   // ── Regional access filter berdasarkan role user ──────────────
   // Cabang: hanya tampilkan ALL REGION + regional sendiri
@@ -3012,11 +2933,6 @@ function filterCat(cat, btn) {
   renderCards();
 }
 
-function filterReg(reg, btn) {
-  activeReg = reg;
-  renderCards();
-}
-
 // ===== DOWNLOAD =====
 function openDownload(id, title) {
   if (!currentUser) { showToast('error','Silakan login terlebih dahulu'); return; }
@@ -3135,8 +3051,6 @@ async function doUpload() {
     activeMonth = bulan;
     document.getElementById('month-dropdown-label').textContent = bulan;
     document.querySelectorAll('.month-dd-item').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
-    // ✅ Sync activeReg agar pill regional langsung muncul sesuai pilihan upload
-    syncRegAfterUpload(regionalResolved);
     renderCards();
     showToast('success', 'Materi berhasil disimpan!');
     resetUploadForm();
@@ -3256,8 +3170,6 @@ async function doUpload() {
     activeMonth = bulan;
     document.getElementById('month-dropdown-label').textContent = bulan;
     document.querySelectorAll('.month-dd-item').forEach(b => b.classList.toggle('active', b.textContent.trim() === bulan));
-    // ✅ Sync activeReg agar pill regional langsung muncul sesuai pilihan upload
-    syncRegAfterUpload(regionalResolved);
     renderCards();
     showToast('success', totalFiles > 1
       ? `${totalFiles} file berhasil diupload ke Drive!`
@@ -3271,23 +3183,7 @@ async function doUpload() {
   }
 }
 
-// ✅ Sync navbar regional dropdown setelah upload agar pill langsung tampil sesuai pilihan
-function syncRegAfterUpload(regionalValue) {
-  const REG_LABELS = {
-    'ALL REGION':'Semua Regional',
-    'JABODETABEK':'Jabodetabek','SUMBAGUT':'Sumbagut','KALIMANTAN':'Kalimantan',
-    'INTIM':'Intim','JATIM':'Jatim','JATENG':'Jateng','JABAR':'Jabar',
-    'BALI NUSRA':'Bali Nusra','SUMBAGSEL':'Sumbagsel','SULAWESI':'Sulawesi'
-  };
-  const reg = (regionalValue || 'ALL REGION').toUpperCase().trim();
-  const label = REG_LABELS[reg] || reg;
-  activeReg = reg;
-  const labelEl = document.getElementById('reg-dropdown-label');
-  if (labelEl) labelEl.textContent = label;
-  document.querySelectorAll('.reg-dd-item').forEach(b => {
-    b.classList.toggle('active', b.textContent.trim() === label);
-  });
-}
+
 
 function resetUploadForm() {
   document.getElementById('up-judul').value    = '';
