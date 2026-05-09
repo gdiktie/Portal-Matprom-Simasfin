@@ -8,12 +8,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
-<script>
-  if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
-</script>
-<style>
+  <style>
   :root {
     --red: #D0282E;
     --red-dark: #A81E23;
@@ -424,7 +419,8 @@
       font-size: .85rem !important;
     }
   }
-</style>
+
+  </style>
 </head>
 <body style="">
 
@@ -745,7 +741,19 @@
               <option value="Legal">Legal</option>
               <option value="Marketing">Marketing</option>
             </select>
-            <select id="reg-cabang-select" class="input-field hidden"><option value="">-- Pilih Cabang --</option><option value="Ambon">Ambon</option><option value="Balikpapan">Balikpapan</option><option value="Bandar Lampung">Bandar Lampung</option><option value="Bandung">Bandung</option><option value="Banjarmasin">Banjarmasin</option><option value="Batam">Batam</option><option value="Bekasi">Bekasi</option><option value="Bengkulu">Bengkulu</option><option value="Bogor">Bogor</option><option value="Cimahi">Cimahi</option><option value="Cirebon">Cirebon</option><option value="Denpasar">Denpasar</option><option value="Depok">Depok</option><option value="Gorontalo">Gorontalo</option><option value="Jakarta Barat">Jakarta Barat</option><option value="Jakarta Pusat">Jakarta Pusat</option><option value="Jakarta Selatan">Jakarta Selatan</option><option value="Jakarta Timur">Jakarta Timur</option><option value="Jakarta Utara">Jakarta Utara</option><option value="Jambi">Jambi</option><option value="Jayapura">Jayapura</option><option value="Jember">Jember</option><option value="Kediri">Kediri</option><option value="Kendari">Kendari</option><option value="Kupang">Kupang</option><option value="Madiun">Madiun</option><option value="Makassar">Makassar</option><option value="Malang">Malang</option><option value="Manado">Manado</option><option value="Manokwari">Manokwari</option><option value="Mataram">Mataram</option><option value="Medan">Medan</option><option value="Padang">Padang</option><option value="Palembang">Palembang</option><option value="Palu">Palu</option><option value="Pekanbaru">Pekanbaru</option><option value="Pontianak">Pontianak</option><option value="Samarinda">Samarinda</option><option value="Semarang">Semarang</option><option value="Sidoarjo">Sidoarjo</option><option value="Solo">Solo</option><option value="Sorong">Sorong</option><option value="Sukabumi">Sukabumi</option><option value="Surabaya">Surabaya</option><option value="Tangerang">Tangerang</option><option value="Tangerang Selatan">Tangerang Selatan</option><option value="Ternate">Ternate</option><option value="Yogyakarta">Yogyakarta</option></select>
+            <select id="reg-cabang-select" class="input-field hidden">
+              <option value="">-- Pilih Regional --</option>
+              <option value="BALI NUSRA">Bali Nusra</option>
+              <option value="INTIM">Intim</option>
+              <option value="JABAR">Jabar</option>
+              <option value="JABODETABEK">Jabodetabek</option>
+              <option value="JATENG">Jateng</option>
+              <option value="JATIM">Jatim</option>
+              <option value="KALIMANTAN">Kalimantan</option>
+              <option value="SUMBAGSEL">Sumbagsel</option>
+              <option value="SUMBAGUT">Sumbagut</option>
+              <option value="SULAWESI">Sulawesi</option>
+            </select>
           </div>
         </div>
         <div>
@@ -780,7 +788,7 @@
       </div>
       <hr class="divider">
       <div class="text-center text-sm text-gray-500">
-        Jika sudah daftar hubungi <a href="mailto:mbc@simasfinance.co.id" style="color:#D0282E;font-weight:700;text-decoration:underline;">Tim Marcomm</a> untuk Verifikasi, harap lampirkan Nama Lengkap, NIK, Email dan Cabang
+        Jika sudah daftar hubungi <a href="mailto:mbc@simasfinance.co.id?subject=Verifikasi_PMP" style="color:#D0282E;font-weight:700;text-decoration:underline;">Tim Marcomm</a> dengan subject email <strong>"Verifikasi_PMP"</strong> untuk Verifikasi akun, harap lampirkan Nama Lengkap, NIK, Email dan Cabang
       </div>
     </div>
   </div>
@@ -1084,7 +1092,9 @@
   </div>
 </div>
 
-<script>
+
+
+<div id="loading-overlay" style="position: fixed; inset: 0px; background: rgba(26, 35, 64, 0.55); z-index: 999; display: none; align-items: center; justify-content: center; backdrop-filter: blur(3px); pointer-events: none;"><div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div></div>  <script>
 // ===== DATA =====
 const BRANCHES = [
   "Jakarta Pusat","Jakarta Barat","Jakarta Timur","Jakarta Selatan","Jakarta Utara",
@@ -1521,12 +1531,8 @@ function selectReg(reg, label, btn) {
 
 function populateBranches() {
   const sel = document.getElementById('reg-cabang-select');
-  sel.innerHTML = '<option value="">-- Pilih Cabang --</option>';
-  BRANCHES.forEach(b => {
-    const opt = document.createElement('option');
-    opt.value = b; opt.textContent = b;
-    sel.appendChild(opt);
-  });
+  if (!sel) return;
+  // Dropdown regional sudah diisi statis di HTML — tidak perlu populate dari BRANCHES
 }
 
 function setupFileInput() {
@@ -1920,8 +1926,19 @@ async function openPreview(id) {
   const dlBtn   = document.getElementById('preview-dl-btn');
   const lockMsg = document.getElementById('preview-locked-msg');
   dlBtn.innerHTML = `<i class="fa-solid fa-download"></i> Unduh Materi`;
-  if (locked && !mkt) { dlBtn.disabled = true; lockMsg.style.display = ''; }
-  else { dlBtn.disabled = false; lockMsg.style.display = 'none'; }
+  const canDl = canDownloadItem(item);
+  if (!canDl) {
+    dlBtn.disabled = true;
+    const itemReg = (item.regional || 'ALL REGION').toUpperCase().trim();
+    const REG_LABELS = {'ALL REGION':'Semua Regional','JABODETABEK':'Jabodetabek','JABAR':'Jabar','JATENG':'Jateng','JATIM':'Jatim','BALI NUSRA':'Bali Nusra','KALIMANTAN':'Kalimantan','SUMBAGSEL':'Sumbagsel','SUMBAGUT':'Sumbagut','SULAWESI':'Sulawesi','INTIM':'Intim'};
+    lockMsg.innerHTML = locked
+      ? '<i class="fa-solid fa-lock mr-1"></i>Materi ini dikunci oleh Marketing. Hubungi admin untuk akses.'
+      : '<i class="fa-solid fa-map-marker-alt mr-1"></i>Materi ini khusus Regional ' + (REG_LABELS[itemReg] || itemReg) + '. Akun Anda tidak memiliki akses.';
+    lockMsg.style.display = '';
+  } else {
+    dlBtn.disabled = false;
+    lockMsg.style.display = 'none';
+  }
 
   // Buka overlay dulu, baru load gambar (UX lebih cepat)
   document.getElementById('preview-overlay').classList.add('open');
@@ -2479,7 +2496,7 @@ function switchRegisterTab(mode) {
   const inp = document.getElementById('reg-unit-input');
   const sel = document.getElementById('reg-cabang-select');
   if (mode === 'cabang') {
-    lbl.innerHTML = 'Cabang <span class="text-red-500">*</span>';
+    lbl.innerHTML = 'Regional <span class="text-red-500">*</span>';
     inp.classList.add('hidden');
     sel.classList.remove('hidden');
   } else {
@@ -2545,6 +2562,7 @@ async function doRegister() {
   const unit = registerTabMode === 'kpno'
     ? document.getElementById('reg-unit-input').value
     : document.getElementById('reg-cabang-select').value;
+  const regional = registerTabMode === 'cabang' ? unit : 'KPNO';
 
   if (!nama || !idcard || !email || !telp || !pwd || !unit) {
     showToast('error', 'Harap isi semua field'); return;
@@ -2561,7 +2579,7 @@ async function doRegister() {
   try {
     const resp = await apiCall('register', {
       nama, idcard8: idcard, idcard4: idcard.substring(0, 4),
-      email, telp, cabang: unit, role: registerTabMode, password: pwd
+      email, telp, cabang: unit, regional: regional, role: registerTabMode, password: pwd
     });
     if (resp.ok) {
       showToast('success', resp.msg || 'Registrasi berhasil! Silakan login.');
@@ -2603,6 +2621,27 @@ function isMarketing() {
     currentUser.role === 'kpno' &&
     currentUser.cabang &&
     currentUser.cabang.toLowerCase().includes('marketing');
+}
+
+// Cek apakah user boleh download item ini
+// Marketing  → bisa semua (termasuk yang terkunci manual)
+// KPNO biasa → hanya bisa item ber-tag ALL REGION, kecuali terkunci manual
+// Cabang     → hanya bisa item ber-tag ALL REGION atau regional yang sama dengan regionalnya
+function canDownloadItem(item) {
+  if (!currentUser) return false;
+  const mkt    = isMarketing();
+  const locked = !!item.locked;
+  if (mkt) return true;
+  if (locked) return false;
+  const itemReg = (item.regional || 'ALL REGION').toUpperCase().trim();
+  if (currentUser.role === 'kpno') {
+    return itemReg === 'ALL REGION';
+  }
+  if (currentUser.role === 'cabang') {
+    const userReg = (currentUser.regional || currentUser.cabang || '').toUpperCase().trim();
+    return itemReg === 'ALL REGION' || itemReg === userReg;
+  }
+  return false;
 }
 
 function onLoginSuccess() {
@@ -2705,6 +2744,23 @@ function renderCards() {
     });
   }
 
+  // ── Regional access filter berdasarkan role user ──────────────
+  // Cabang: hanya tampilkan ALL REGION + regional sendiri
+  // KPNO biasa: hanya tampilkan ALL REGION
+  // Marketing: tampilkan semua
+  if (!isMarketing()) {
+    filtered = filtered.filter(d => {
+      const itemReg = (d.regional || 'ALL REGION').toUpperCase().trim();
+      if (itemReg === 'ALL REGION') return true;
+      if (currentUser.role === 'cabang') {
+        const userReg = (currentUser.regional || currentUser.cabang || '').toUpperCase().trim();
+        return itemReg === userReg;
+      }
+      // KPNO biasa: tidak tampilkan yang regional spesifik
+      return false;
+    });
+  }
+
   const q = (document.getElementById('search-input').value || '').toLowerCase();
 
   // Kumpulkan kategori yang benar-benar punya data di bulan ini (urutan sesuai SEGMENT_CONFIG)
@@ -2803,7 +2859,7 @@ function renderCards() {
 function buildCard(item) {
   const mkt    = isMarketing();
   const locked = !!item.locked;
-  const canDl  = !locked || mkt;
+  const canDl  = canDownloadItem(item);
 
   const catLabel = {brosur:'Cetak',banner:'Banner',instagram:'Instagram',formulir:'Formulir',video:'Video',logo:'Logo'}[item.cat] || item.cat;
   const catColor = {brosur:'bg-orange-100 text-orange-700',banner:'bg-blue-100 text-blue-700',instagram:'bg-pink-100 text-pink-700',formulir:'bg-green-100 text-green-700',video:'bg-purple-100 text-purple-700',logo:'bg-yellow-100 text-yellow-700'}[item.cat] || 'bg-gray-100 text-gray-600';
@@ -2855,9 +2911,15 @@ function buildCard(item) {
     ? `<button class="btn-download flex-1" onclick="openPreview(${item.id})">
          <i class="fa-solid fa-eye"></i> View
        </button>`
-    : `<button class="btn-download-locked flex-1" disabled title="Materi dikunci oleh Marketing">
-         <i class="fa-solid fa-lock"></i> Terkunci
+    : (() => {
+        const itemReg = (item.regional || 'ALL REGION').toUpperCase().trim();
+        const isRegLocked = !locked && itemReg !== 'ALL REGION';
+        const title = locked ? 'Materi dikunci oleh Marketing' : 'Materi ini hanya untuk regional ' + itemReg;
+        const label = locked ? 'Terkunci' : 'Regional Lain';
+        return `<button class="btn-download-locked flex-1" disabled title="${title}">
+         <i class="fa-solid fa-lock"></i> ${label}
        </button>`;
+      })();
 
   const mktBtns = mkt ? `
     <button class="btn-edit" onclick="toggleLock(${item.id})"
@@ -2874,8 +2936,8 @@ function buildCard(item) {
       <i class="fa-solid fa-trash"></i>
     </button>` : '';
 
-  const cardClass = (locked && !mkt) ? 'media-card card-locked' : 'media-card';
-  const clickable = (!locked || mkt);
+  const cardClass = (!canDl) ? 'media-card card-locked' : 'media-card';
+  const clickable = canDl;
 
   // Regional tag - hanya tampil jika materi punya region spesifik
   const regValue = (item.regional || 'ALL REGION').toUpperCase().trim();
@@ -2897,8 +2959,8 @@ function buildCard(item) {
     <div class="card-thumb" onclick="${clickable ? `openPreview(${item.id})` : ''}"
          style="${!clickable ? 'cursor:default;pointer-events:none;' : ''}">
       ${thumbHtml}
-      ${item.isNewActive && !locked ? '<span class="badge-new">✦ NEW</span>' : ''}
-      ${locked ? '<span class="badge-locked"><i class="fa-solid fa-lock" style="font-size:.6rem;"></i> TERKUNCI</span>' : ''}
+      ${item.isNewActive && canDl ? '<span class="badge-new">✦ NEW</span>' : ''}
+      ${!canDl ? '<span class="badge-locked"><i class="fa-solid fa-lock" style="font-size:.6rem;"></i> TERKUNCI</span>' : ''}
       ${multiFileBadge}
     </div>
     <div class="p-4" style="display:flex;flex-direction:column;flex:1;min-height:0;">
@@ -2911,7 +2973,7 @@ function buildCard(item) {
         <h3 class="font-semibold text-sm ${(locked && !mkt) ? 'text-gray-400' : 'text-navy'} leading-snug mb-1 line-clamp-2">${item.title}</h3>
         <div class="text-xs text-gray-400 flex items-center gap-2">
           <i class="fa-solid fa-file text-gray-300"></i>${item.size}
-          ${locked ? '<span style="color:#f59e0b;font-size:.65rem;font-weight:700;"><i class="fa-solid fa-lock mr-1"></i>Terkunci</span>' : ''}
+          ${!canDl ? '<span style="color:#f59e0b;font-size:.65rem;font-weight:700;"><i class="fa-solid fa-lock mr-1"></i>Terkunci</span>' : ''}
         </div>
       </div>
       <div class="flex gap-2 mt-4" style="align-items:center;flex-wrap:nowrap;">
@@ -2959,7 +3021,7 @@ function filterReg(reg, btn) {
 function openDownload(id, title) {
   if (!currentUser) { showToast('error','Silakan login terlebih dahulu'); return; }
   const chk = mediaData.find(d => d.id === id);
-  if (chk && chk.locked && !isMarketing()) { showToast('error','Materi ini dikunci. Hubungi tim Marketing.'); return; }
+  if (chk && !canDownloadItem(chk)) { showToast('error', chk.locked ? 'Materi ini dikunci. Hubungi tim Marketing.' : 'Materi ini hanya untuk regional tertentu. Akun Anda tidak memiliki akses.'); return; }
   selectedDownloadId = id;
   document.getElementById('dl-title').textContent = title;
   openModal('dl');
@@ -2969,8 +3031,8 @@ function confirmDownload() {
   const item = mediaData.find(d => d.id === selectedDownloadId);
   if (!item) return;
 
-  if (item.locked === true && !isMarketing()) {
-    showToast('error', 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.');
+  if (!canDownloadItem(item)) {
+    showToast('error', item.locked ? 'Materi ini dikunci oleh Marketing. Tidak dapat diunduh.' : 'Materi ini hanya untuk regional tertentu. Akun Anda tidak memiliki akses.');
     return;
   }
 
@@ -3432,7 +3494,7 @@ async function downloadAllVisible() {
     const matchMonth = d.month === activeMonth;
     const matchCat   = activeCat === 'all' || d.cat === activeCat || d.segment === activeCat;
     const matchQ     = d.title.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q);
-    const canDl      = !d.locked || isMarketing();
+    const canDl      = canDownloadItem(d);
     return matchMonth && matchCat && matchQ && canDl;
   });
 
@@ -3545,7 +3607,6 @@ function showToast(type, msg) {
 function scrollToSection(id) {
   document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
 }
+
 </script>
-
-
-<div id="loading-overlay" style="position: fixed; inset: 0px; background: rgba(26, 35, 64, 0.55); z-index: 999; display: none; align-items: center; justify-content: center; backdrop-filter: blur(3px); pointer-events: none;"><div style="background:#fff;border-radius:16px;padding:32px 40px;text-align:center;"><i class="fa-solid fa-spinner fa-spin text-red-500 text-2xl block mb-3"></i><div style="font-weight:600;color:#1A2340;font-size:.9rem;">Memuat data...</div></div></div></body></html>
+</body></html>
