@@ -2503,7 +2503,7 @@ async function doRegister() {
   try {
     const resp = await apiCall('register', {
       nama, idcard8: idcard, idcard4: idcard.substring(0, 4),
-      email, telp, cabang: unit, regional: regional, role: registerTabMode, password: pwd
+      email, telp, regional: regional, role: registerTabMode, password: pwd
     });
     if (resp.ok) {
       showToast('success', resp.msg || 'Registrasi berhasil! Silakan login.');
@@ -2543,8 +2543,8 @@ function logout() {
 function isMarketing() {
   return currentUser &&
     currentUser.role === 'kpno' &&
-    currentUser.cabang &&
-    currentUser.cabang.toLowerCase().includes('marketing');
+    currentUser.regional &&
+    currentUser.regional.toLowerCase().includes('marketing');
 }
 
 // Cek apakah user boleh download item ini
@@ -2562,7 +2562,7 @@ function canDownloadItem(item) {
     return itemReg === 'ALL REGION';
   }
   if (currentUser.role === 'cabang') {
-    const userReg = (currentUser.regional || currentUser.cabang || '').toUpperCase().trim();
+    const userReg = (currentUser.regional || '').toUpperCase().trim();
     return itemReg === 'ALL REGION' || itemReg === userReg;
   }
   return false;
@@ -2584,7 +2584,7 @@ function onLoginSuccess() {
     if (isMarketing()) {
       roleLabel = 'KPNO \u00b7 <span class="badge-marketing">\u2726 MARKETING</span>';
     } else {
-      const divisi = (currentUser.cabang || '').trim();
+      const divisi = (currentUser.regional || '').trim();
       roleLabel = divisi ? 'KPNO \u00b7 ' + divisi : 'KPNO';
     }
   } else {
@@ -2593,8 +2593,8 @@ function onLoginSuccess() {
       'BALI NUSRA':'Bali Nusra','KALIMANTAN':'Kalimantan','SUMBAGSEL':'Sumbagsel',
       'SUMBAGUT':'Sumbagut','SULAWESI':'Sulawesi','INTIM':'Intim'
     };
-    const regKey = (currentUser.cabang || '').toUpperCase().trim();
-    const regTitle = REG_TITLE[regKey] || currentUser.cabang || '';
+    const regKey = (currentUser.regional || '').toUpperCase().trim();
+    const regTitle = REG_TITLE[regKey] || currentUser.regional || '';
     roleLabel = 'Regional · ' + regTitle;
   }
   document.getElementById('nav-role').innerHTML = roleLabel;
@@ -2676,7 +2676,7 @@ function renderCards() {
       const itemReg = (d.regional || 'ALL REGION').toUpperCase().trim();
       if (itemReg === 'ALL REGION') return true;
       if (currentUser.role === 'cabang') {
-        const userReg = (currentUser.regional || currentUser.cabang || '').toUpperCase().trim();
+        const userReg = (currentUser.regional || '').toUpperCase().trim();
         return itemReg === userReg;
       }
       // KPNO biasa: tidak tampilkan yang regional spesifik
