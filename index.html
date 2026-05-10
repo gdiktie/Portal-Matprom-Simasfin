@@ -2548,10 +2548,9 @@ function logout() {
 
 // Helper: cek apakah user adalah Marketing (superadmin)
 function isMarketing() {
-  return currentUser &&
-    currentUser.role === 'kpno' &&
-    currentUser.cabang &&
-    currentUser.cabang.toLowerCase().includes('marketing');
+  if (!currentUser || currentUser.role !== 'kpno') return false;
+  const divisi = (currentUser.cabang || currentUser.unit || currentUser.divisi || '').toLowerCase();
+  return divisi.includes('marketing');
 }
 
 // Cek apakah user boleh download item ini
@@ -2588,11 +2587,12 @@ function onLoginSuccess() {
   // Tampilkan badge MARKETING jika superadmin, atau KPNO · (Divisi) dengan badge untuk KPNO biasa
   let roleLabel;
   if (currentUser.role === 'kpno') {
-    if (isMarketing()) {
+    // Server mungkin menyimpan divisi di field berbeda: cabang, unit, divisi
+    const _divisiKPNO = (currentUser.cabang || currentUser.unit || currentUser.divisi || '').trim();
+    if (_divisiKPNO.toLowerCase().includes('marketing')) {
       roleLabel = 'KPNO \u00b7 <span class="badge-marketing">\u2726 MARKETING</span>';
     } else {
-      const divisi = (currentUser.cabang || '').trim();
-      roleLabel = divisi ? 'KPNO \u00b7 ' + divisi : 'KPNO';
+      roleLabel = _divisiKPNO ? 'KPNO \u00b7 ' + _divisiKPNO : 'KPNO';
     }
   } else {
     const REG_TITLE = {
