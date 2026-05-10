@@ -488,7 +488,7 @@
         <div class="text-gray-400 text-xs mt-1">Cabang Aktif</div>
       </div>
       <div class="stat-card text-center">
-        <div class="text-2xl font-sora font-bold text-white">2026</div>
+        <div class="text-2xl font-sora font-bold text-white" id="hero-stat-bulan"></div>
         <div class="text-gray-400 text-xs mt-1">Update Terkini</div>
       </div>
     </div>
@@ -1312,6 +1312,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   buildMonthTabs();
   populateBranches();
   setupFileInput();
+  updateHeroStatBulan();
 
   // Keyboard arrow nav for preview carousel
   document.addEventListener('keydown', (e) => {
@@ -2583,14 +2584,16 @@ function onLoginSuccess() {
   document.getElementById('user-info').classList.add('flex');
   document.getElementById('nav-username').textContent = currentUser.nama.split(' ').slice(0,2).join(' ');
 
-  // Tampilkan badge MARKETING jika superadmin, atau KPNO · (Divisi) untuk KPNO biasa
+  // Tampilkan badge MARKETING jika superadmin, atau KPNO · (Divisi) dengan badge untuk KPNO biasa
   let roleLabel;
   if (currentUser.role === 'kpno') {
     if (isMarketing()) {
       roleLabel = 'KPNO \u00b7 <span class="badge-marketing">\u2726 MARKETING</span>';
     } else {
       const divisi = (currentUser.cabang || '').trim();
-      roleLabel = divisi ? 'KPNO \u00b7 ' + divisi : 'KPNO';
+      roleLabel = divisi
+        ? 'KPNO \u00b7 <span class="badge-divisi">' + divisi + '</span>'
+        : 'KPNO';
     }
   } else {
     const REG_TITLE = {
@@ -2620,6 +2623,15 @@ function updateHeroStat() {
   // Hitung item unik berdasarkan id (hindari duplikat) dari semua bulan
   const uniqueIds = new Set(mediaData.map(d => d.id).filter(Boolean));
   el.textContent = uniqueIds.size;
+}
+
+// ===== HERO STAT: UPDATE TERKINI (bulan & tahun otomatis) =====
+function updateHeroStatBulan() {
+  const el = document.getElementById('hero-stat-bulan');
+  if (!el) return;
+  const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+  const now = new Date();
+  el.textContent = BULAN[now.getMonth()] + ' ' + now.getFullYear();
 }
 
 // ===== SEGMENT CONFIG =====
@@ -2666,6 +2678,7 @@ const SEGMENT_CONFIG = {
 // ===== CARDS =====
 function renderCards() {
   updateHeroStat();
+  updateHeroStatBulan();
 
   // Jika belum login, jangan render apapun
   if (!currentUser) return;
