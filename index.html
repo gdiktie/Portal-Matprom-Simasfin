@@ -182,9 +182,10 @@
   }
 
   /* MARKETING BADGE di navbar role */
-  .badge-marketing { background:linear-gradient(135deg,var(--red),var(--orange));
-    color:#fff; border-radius:99px; font-size:.6rem; font-weight:700;
-    padding:2px 8px; letter-spacing:.04em; margin-left:4px; vertical-align:middle; }
+  .badge-marketing { background:linear-gradient(135deg,var(--red),var(--orange)) !important;
+    color:#fff !important; border-radius:99px; font-size:.6rem; font-weight:700;
+    padding:2px 8px; letter-spacing:.04em; margin-left:4px;
+    display:inline; vertical-align:middle; white-space:nowrap; }
 
   /* DIVISI BADGE untuk KPNO non-marketing */
   .badge-divisi { background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.25);
@@ -442,7 +443,7 @@
       <div id="user-info" class="items-center gap-3 hidden">
         <div class="text-right hidden sm:block">
           <div class="text-white text-sm font-semibold" id="nav-username">Diananda Gagah</div>
-          <div class="text-gray-400 text-xs" id="nav-role">KPNO · <span class="badge-marketing">✦ MARKETING</span></div>
+          <div class="text-gray-400 text-xs flex items-center gap-1" id="nav-role">KPNO · <span class="badge-marketing">✦ MARKETING</span></div>
         </div>
         <div class="w-9 h-9 rounded-full bg-red-600 flex items-center justify-center">
           <i class="fa-solid fa-user text-white text-sm"></i>
@@ -2591,9 +2592,7 @@ function onLoginSuccess() {
       roleLabel = 'KPNO \u00b7 <span class="badge-marketing">\u2726 MARKETING</span>';
     } else {
       const divisi = (currentUser.cabang || '').trim();
-      roleLabel = divisi
-        ? 'KPNO \u00b7 <span class="badge-divisi">' + divisi + '</span>'
-        : 'KPNO';
+      roleLabel = divisi ? 'KPNO \u00b7 ' + divisi : 'KPNO';
     }
   } else {
     const REG_TITLE = {
