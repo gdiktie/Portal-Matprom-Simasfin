@@ -141,6 +141,10 @@
   footer { background: var(--navy); color: rgba(255,255,255,.6); }
 
   /* LOCK BADGE */
+  @keyframes scaleIn {
+    from { opacity:0; transform:scale(.92); }
+    to   { opacity:1; transform:scale(1); }
+  }
   .badge-locked { position:absolute; top:10px; left:10px; z-index:3;
     background:rgba(26,35,64,.75); color:#fff; border-radius:8px;
     padding:3px 9px; font-size:.65rem; font-weight:700; display:flex;
@@ -488,7 +492,7 @@
         <div class="text-gray-400 text-xs mt-1">Cabang Aktif</div>
       </div>
       <div class="stat-card text-center">
-        <div class="text-2xl font-sora font-bold text-white">2026</div>
+        <div class="text-2xl font-sora font-bold text-white" id="hero-stat-bulan">-</div>
         <div class="text-gray-400 text-xs mt-1">Update Terkini</div>
       </div>
     </div>
@@ -1306,6 +1310,15 @@ function mergeMediaLocalCache(items) {
     });
   } catch(e) { return items; }
 }
+
+// ===== UPDATE TERKINI: bulan + tahun otomatis =====
+(function() {
+  const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const now = new Date();
+  const label = BULAN[now.getMonth()] + ' ' + now.getFullYear();
+  const el = document.getElementById('hero-stat-bulan');
+  if (el) el.textContent = label;
+})();
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', async () => {
@@ -2507,8 +2520,15 @@ async function doRegister() {
 
   try {
     const resp = await apiCall('register', {
-      nama, idcard8: idcard, idcard4: idcard.substring(0, 4),
-      email, telp, cabang: unit, regional: regional, role: registerTabMode, password: pwd
+      nama,
+      idcard8: idcard,
+      idcard4: idcard.substring(0, 4),
+      email,
+      telp,
+      cabang: unit,
+      regional: regional,
+      role: registerTabMode,
+      password: pwd
     });
     if (resp.ok) {
       showToast('success', resp.msg || 'Registrasi berhasil! Silakan login.');
@@ -3368,24 +3388,58 @@ async function deleteCard(id) {
   if (!item) return;
   if (item.locked) { showToast('error','Materi terkunci tidak bisa dihapus'); return; }
 
-  if (!confirm(`Hapus "${item.title}"?\n\nFile di Google Drive juga akan ikut dihapus permanen.`)) return;
+  // Tampilkan modal konfirmasi
+  showDeleteConfirm(item.title, async () => {
+    try {
+      await apiPost('deleteMedia', {
+        id       : String(id),
+        folderId : item.driveFolderId || null,
+        fileIds  : Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [],
+        sheetOnly: false,
+      });
+    } catch(e) {
+      console.warn('deleteMedia server error:', e.message);
+    }
+    mediaData = mediaData.filter(d => d.id !== id);
+    deleteRegionalLock(id);
+    renderCards();
+    showToast('success', `"${item.title}" berhasil dihapus`);
+  });
+}
 
-  try {
-    await apiPost('deleteMedia', {
-      id       : String(id),
-      folderId : item.driveFolderId || null,
-      fileIds  : Array.isArray(item.fileIds) && item.fileIds.length > 0 ? item.fileIds : [],
-      sheetOnly: false,   // hapus Drive + Sheet
-    });
-  } catch(e) {
-    // Tetap hapus dari tampilan meski server error
-    console.warn('deleteMedia server error:', e.message);
+function showDeleteConfirm(title, onConfirm) {
+  // Buat overlay konfirmasi
+  let overlay = document.getElementById('delete-confirm-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'delete-confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(overlay);
   }
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:32px 28px;max-width:420px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.25);text-align:center;animation:scaleIn .18s ease;">
+      <div style="width:60px;height:60px;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+        <i class="fa-solid fa-trash-can" style="color:#D0282E;font-size:1.4rem;"></i>
+      </div>
+      <h3 style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:#1A2340;margin:0 0 10px;">Hapus Materi?</h3>
+      <p style="color:#6B7A99;font-size:.85rem;margin:0 0 8px;line-height:1.5;">Anda akan menghapus:</p>
+      <p style="color:#1A2340;font-weight:700;font-size:.9rem;margin:0 0 18px;padding:10px 14px;background:#f7f8fa;border-radius:10px;word-break:break-word;">"${title}"</p>
+      <p style="color:#D0282E;font-size:.78rem;margin:0 0 24px;"><i class="fa-solid fa-triangle-exclamation mr-1"></i>File di Google Drive juga akan ikut dihapus permanen. Tindakan ini tidak dapat dibatalkan.</p>
+      <div style="display:flex;gap:10px;">
+        <button id="delete-cancel-btn" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid #E4E7EE;background:#fff;font-weight:600;font-size:.85rem;color:#6B7A99;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#1A2340';this.style.color='#1A2340'" onmouseout="this.style.borderColor='#E4E7EE';this.style.color='#6B7A99'">
+          Batal
+        </button>
+        <button id="delete-confirm-btn" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#D0282E,#F05A28);color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .15s;box-shadow:0 4px 14px rgba(208,40,46,.3);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+          <i class="fa-solid fa-trash-can mr-1"></i>Ya, Hapus
+        </button>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
 
-  mediaData = mediaData.filter(d => d.id !== id);
-  deleteRegionalLock(id); // ✅ bersihkan lock regional item yang dihapus
-  renderCards();
-  showToast('success', `"${item.title}" berhasil dihapus`);
+  const close = () => { overlay.style.display = 'none'; };
+  document.getElementById('delete-cancel-btn').onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  document.getElementById('delete-confirm-btn').onclick = () => { close(); onConfirm(); };
 }
 
 // ===== DOWNLOAD ALL =====
